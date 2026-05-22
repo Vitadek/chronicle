@@ -1,0 +1,60 @@
+services:
+  chronicle:
+    build: .
+    image: chronicle:latest
+    container_name: chronicle
+    restart: unless-stopped
+    # Ports are now handled by the Caddy reverse proxy
+    expose:
+      - "3000"
+    volumes:
+      - chronicle-data:/data
+    environment:
+      # Forward Auth (Authelia)
+      AUTH_MODE: "forward"
+      AUTH_FORWARD_HEADER_USER: "Remote-User"
+      AUTH_FORWARD_HEADER_EMAIL: "Remote-Email"
+      # Trust the Docker internal network and loopback
+      AUTH_FORWARD_TRUSTED_PROXIES: "127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8,192.168.0.0/16"
+
+      # AI proxy settings (optional)
+      # OPENAI_API_KEY: ""
+
+  authelia:
+    image: authelia/authelia:latest
+    container_name: authelia
+    restart: unless-stopped
+    ports:
+      - "9091:9091"
+    volumes:
+      - ./authelia:/config
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--no-check-certificate", "--spider", "http://localhost:9091/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  caddy:
+    image: caddy:latest
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443/tcp"
+      - "443:443/udp" # Enables QUIC/HTTP3
+      - "3000:3000"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - chronicle-caddy-data:/data
+      - chronicle-caddy-config:/config
+    depends_on:
+      - authelia
+      - chronicle
+
+volumes:
+  chronicle-data:
+  chronicle-caddy-data:
+  chronicle-caddy-config:

@@ -1,0 +1,47 @@
+###############################################################
+# Authelia Configuration for Chronicle Workstation
+###############################################################
+
+server:
+  address: 'tcp://0.0.0.0:9091'
+
+log:
+  level: info
+
+authentication_backend:
+  password_reset:
+    disable: true
+  file:
+    path: /config/users_database.yml
+
+session:
+  secret: 'a_very_long_random_session_secret_string_for_chronicle'
+  cookies:
+    - name: 'authelia_session'
+      domain: 'chronicle.localhost'
+      authelia_url: 'https://auth.chronicle.localhost:3000'
+      remember_me: '1y'
+
+regulation:
+  max_retries: 3
+  find_time: '2m'
+  ban_time: '5m'
+
+storage:
+  local:
+    path: /config/db.sqlite3
+  encryption_key: 'a_very_long_random_encryption_key_for_chronicle'
+
+access_control:
+  default_policy: deny
+  rules:
+    - domain: ['chronicle.localhost', 'auth.chronicle.localhost']
+      policy: one_factor
+
+identity_validation:
+  reset_password:
+    jwt_secret: 'a_very_long_random_jwt_secret_for_chronicle'
+
+notifier:
+  filesystem:
+    filename: /config/emails.txt

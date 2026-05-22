@@ -1,0 +1,299 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Roboto:wght@400;500;700&family=Montserrat:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Libre Baskerville", ui-serif, Georgia, serif;
+  --font-roboto: "Roboto", ui-sans-serif, system-ui, sans-serif;
+  --font-manuscript: var(--manuscript-font, "Verdana", Geneva, sans-serif);
+  
+  --color-manuscript-light: #F4F1EA;
+  --color-manuscript-dark: #232220;
+  --color-paper-light: #FDFBF7;
+  --color-paper-dark: #2D2C2A;
+}
+
+@layer base {
+  body {
+    @apply transition-colors duration-500 font-sans antialiased bg-manuscript-light text-[#2C2A24] dark:bg-manuscript-dark dark:text-[#F1EDE4];
+  }
+}
+
+.novel-editor .ProseMirror {
+  @apply outline-none font-manuscript text-base leading-[2.2] text-[#1A1A1A] dark:text-[#F1EDE4];
+  /* Text caret. Default browser caret often inherits a dim color from the
+     low-contrast paragraph text in light mode, making it hard to track. We
+     force a strong color and slightly thicken the line so the insertion
+     point is always obvious. */
+  caret-color: #1A1A1A;
+}
+.dark .novel-editor .ProseMirror {
+  caret-color: #F1EDE4;
+}
+
+/* Text selection highlight. The old 10% black tint on a cream background
+   was almost invisible in daylight; bump to a high-contrast amber and a
+   muted blue in dark mode for clear, friendly visibility. */
+.novel-editor .ProseMirror ::selection,
+.novel-editor .ProseMirror::selection {
+  background-color: rgba(255, 200, 70, 0.45);
+  color: #1A1A1A;
+}
+.dark .novel-editor .ProseMirror ::selection,
+.dark .novel-editor .ProseMirror::selection {
+  background-color: rgba(255, 200, 70, 0.30);
+  color: #F1EDE4;
+}
+
+/* Base text visibility and transitions */
+.novel-editor .ProseMirror p,
+.novel-editor .ProseMirror h1,
+.novel-editor .ProseMirror h2,
+.novel-editor .ProseMirror pre {
+  @apply transition-all duration-700;
+  color: #1A1A1A;
+}
+
+.dark .novel-editor .ProseMirror p,
+.dark .novel-editor .ProseMirror h1,
+.dark .novel-editor .ProseMirror h2,
+.dark .novel-editor .ProseMirror pre {
+  color: #F1EDE4 !important;
+}
+
+/* Formal Manuscript Spacing.
+   First-line indent applies only when the editor wrapper has .indent, so
+   the user can flip the SMF default off via Settings → First-Line Indent. */
+.novel-editor .ProseMirror p {
+  @apply mb-0;
+}
+.novel-editor.indent .ProseMirror p {
+  text-indent: 4rem;
+}
+/* When indent is off, give paragraphs breathing room since the indent was
+   the only visual paragraph cue. */
+.novel-editor:not(.indent) .ProseMirror p {
+  @apply mb-4;
+}
+
+/* Remove indent for mobile to prioritize width */
+@media (max-width: 640px) {
+  .novel-editor .ProseMirror p {
+    text-indent: 0;
+    @apply mb-4;
+  }
+  .novel-editor .ProseMirror {
+    @apply text-base;
+  }
+}
+
+/* First paragraph or paragraph after a heading/break never indents. */
+.novel-editor.indent .ProseMirror h1 + p,
+.novel-editor.indent .ProseMirror h2 + p,
+.novel-editor.indent .ProseMirror h3 + p,
+.novel-editor.indent .ProseMirror > p:first-child {
+  text-indent: 0;
+}
+
+.novel-editor .ProseMirror h1 {
+  @apply text-3xl font-manuscript font-bold mb-12 tracking-tight text-center uppercase;
+}
+
+.novel-title-editor .ProseMirror p {
+  @apply text-center text-4xl sm:text-6xl font-manuscript font-bold mb-0;
+  text-indent: 0;
+}
+
+.novel-title-editor .ProseMirror {
+  @apply text-center;
+}
+
+.novel-editor-content.text-center .ProseMirror p {
+  @apply text-center;
+  text-indent: 0;
+}
+
+.autocomplete-suggestion {
+  @apply opacity-30 italic pointer-events-none;
+  color: currentColor;
+}
+
+.novel-editor .ProseMirror h2 {
+  @apply text-xl font-manuscript font-semibold mb-8 tracking-tight text-center;
+}
+
+.novel-editor .ProseMirror pre {
+  @apply font-mono text-sm p-6 rounded-xl my-8 bg-black/[0.05] dark:bg-white/[0.05] border border-black/10 dark:border-white/10 overflow-x-auto;
+  text-indent: 0;
+  white-space: pre-wrap;
+}
+
+.novel-editor .ProseMirror hr {
+  @apply border-none h-px bg-black/10 dark:bg-white/10 my-24 w-full relative overflow-visible transition-all duration-500;
+}
+
+.scene-break-dots .novel-editor .ProseMirror hr,
+.scene-break-ornamental .novel-editor .ProseMirror hr,
+.scene-break-custom .novel-editor .ProseMirror hr {
+  @apply bg-transparent h-auto text-center flex items-center justify-center;
+}
+
+.scene-break-dots .novel-editor .ProseMirror hr::before {
+  content: "· · ·";
+  @apply font-serif text-2xl tracking-[1em] opacity-30;
+}
+
+.scene-break-ornamental .novel-editor .ProseMirror hr::before {
+  content: "* * *";
+  @apply font-serif text-xl tracking-[0.5em] opacity-40;
+}
+
+.scene-break-custom .novel-editor .ProseMirror hr::before {
+  content: "";
+  @apply block w-24 h-24 bg-center bg-no-repeat bg-contain opacity-40;
+  background-image: var(--custom-scene-break-svg);
+}
+
+.novel-editor .ProseMirror blockquote {
+  @apply border-l-2 border-black/10 dark:border-white/10 pl-6 my-8 italic opacity-80;
+}
+
+.novel-editor .ProseMirror blockquote[data-type="epigraph"] {
+  @apply border-none p-0 my-16 mx-auto max-w-sm text-center italic text-sm opacity-60 leading-relaxed;
+}
+
+.novel-editor .ProseMirror blockquote[data-type="epigraph"] p {
+  @apply mb-2;
+  text-indent: 0;
+}
+
+.novel-editor .ProseMirror pre code {
+  @apply bg-transparent p-0 border-none text-current;
+}
+
+/* Comments */
+.manuscript-comment-marker {
+  @apply border-none bg-transparent;
+}
+
+.comment-icon-widget {
+  @apply inline-flex items-center transition-all duration-300 pointer-events-auto cursor-pointer align-baseline;
+}
+
+.comment-icon-widget:hover {
+  @apply scale-110;
+}
+
+body.zen-active .comment-icon-widget {
+  @apply opacity-20 hover:opacity-100;
+}
+
+/* Audio (TTS) widget — sibling of the comment widget, used by /ai_listen.
+   Plays/pauses on click; the .playing class adds a subtle pulse so the
+   user can tell something is happening. */
+.audio-icon-widget {
+  @apply inline-flex items-center transition-all duration-300 pointer-events-auto cursor-pointer border-none bg-transparent p-0 align-baseline;
+}
+.audio-icon-widget:hover {
+  @apply scale-110;
+}
+.audio-icon-widget.playing svg {
+  opacity: 1 !important;
+  color: #c78a3f;
+  animation: chronicle-audio-pulse 1.4s ease-in-out infinite;
+}
+@keyframes chronicle-audio-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+body.zen-active .audio-icon-widget {
+  @apply opacity-20 hover:opacity-100;
+}
+
+/* Tippy Manuscript Theme */
+.tippy-box[data-theme~='manuscript'] {
+  @apply bg-[#1A1918] text-[#F1EDE4] border border-white/10 rounded-xl shadow-2xl;
+}
+
+.tippy-box[data-theme~='manuscript'] .tippy-content {
+  @apply p-0 text-[#F1EDE4] font-sans;
+  max-width: 320px;
+}
+
+.tippy-box[data-theme~='manuscript'] .tippy-arrow {
+  @apply text-[#1A1918];
+}
+
+/* Light Mode Focus States */
+.novel-editor .ProseMirror p.has-focus,
+.novel-editor .ProseMirror h1.has-focus,
+.novel-editor .ProseMirror h2.has-focus,
+.novel-editor .ProseMirror pre.has-focus,
+.novel-editor .ProseMirror blockquote.has-focus {
+  @apply opacity-100 duration-300;
+  color: #000000;
+}
+
+.novel-editor .ProseMirror p:not(.has-focus),
+.novel-editor .ProseMirror h1:not(.has-focus),
+.novel-editor .ProseMirror h2:not(.has-focus),
+.novel-editor .ProseMirror pre:not(.has-focus),
+.novel-editor .ProseMirror blockquote:not(.has-focus) {
+  @apply opacity-50;
+}
+
+/* Dark Mode Focus States */
+.dark .novel-editor .ProseMirror p.has-focus,
+.dark .novel-editor .ProseMirror h1.has-focus,
+.dark .novel-editor .ProseMirror h2.has-focus,
+.dark .novel-editor .ProseMirror pre.has-focus,
+.dark .novel-editor .ProseMirror blockquote.has-focus {
+  @apply opacity-100 duration-300;
+  color: #FFFFFF !important;
+}
+
+.dark .novel-editor .ProseMirror p:not(.has-focus),
+.dark .novel-editor .ProseMirror h1:not(.has-focus),
+.dark .novel-editor .ProseMirror h2:not(.has-focus),
+.dark .novel-editor .ProseMirror pre:not(.has-focus),
+.dark .novel-editor .ProseMirror blockquote:not(.has-focus) {
+  @apply opacity-40;
+  color: #F1EDE4 !important;
+}
+
+/* Hide UI on Zen State */
+body.zen-active .ui-element {
+  @apply opacity-0 pointer-events-none transition-opacity duration-700;
+}
+
+.ui-element-container .ui-element {
+  @apply opacity-0 pointer-events-none;
+}
+
+/* Hovering the container always brings it back rapidly */
+.ui-element-container:hover .ui-element {
+  @apply opacity-100 pointer-events-auto transition-opacity duration-200!;
+}
+
+/* When zen is NOT active, show UI by default */
+body:not(.zen-active) .ui-element {
+  @apply opacity-100 pointer-events-auto;
+}
+
+.ui-element {
+  @apply transition-opacity duration-300;
+}
+
+
+/* Custom scrollbar for that premium feel */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-black/5 rounded-full hover:bg-black/10;
+}

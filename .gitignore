@@ -1,0 +1,20 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+data/
+!data/.gitkeep
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+
+# Authelia dynamic data
+authelia/db.sqlite3
+authelia/emails.txt
+authelia/notification.txt

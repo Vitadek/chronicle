@@ -1,0 +1,11 @@
+###############################################################
+# Authelia User Database
+###############################################################
+
+users:
+  chronicle:
+    displayname: "Chronicle Author"
+    password: "$argon2id$v=19$m=65536,t=3,p=4$p9sW93EMLaw5PnTzweTJ9A$thdxN1HCRz3OdOWFA4Ev1UCwWcYTVB6rW74YStHLPp0" # Correct hash for 'chronicle'
+    email: author@example.com
+    groups:
+      - writers

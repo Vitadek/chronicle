@@ -1,0 +1,40 @@
+{
+    admin off
+}
+
+# --- PRODUCTION CONFIGURATION (COMMENTED OUT) ---
+# When you move to VPS, uncomment and replace domains.
+
+# chronicle.taeleera.com {
+#     tls /etc/letsencrypt/live/chronicle.taeleera.com/fullchain.pem /etc/letsencrypt/live/chronicle.taeleera.com/privkey.pem
+#     forward_auth authelia:9091 {
+#         uri /api/verify?rd=https://auth.taeleera.com/
+#         copy_headers Remote-User Remote-Email Remote-Groups
+#     }
+#     reverse_proxy chronicle:3000
+# }
+
+# auth.taeleera.com {
+#     reverse_proxy authelia:9091
+# }
+
+
+# --- LOCAL DEVELOPMENT / TESTING ---
+chronicle.localhost:3000 {
+    forward_auth authelia:9091 {
+        uri /api/verify?rd=https://auth.chronicle.localhost:3000/
+        copy_headers Remote-User Remote-Email Remote-Groups
+    }
+    reverse_proxy chronicle:3000
+    tls internal
+}
+
+auth.chronicle.localhost:3000 {
+    reverse_proxy authelia:9091
+    tls internal
+}
+
+https://:3000 {
+    redir https://chronicle.localhost:3000{uri}
+    tls internal
+}
