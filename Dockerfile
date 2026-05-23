@@ -5,7 +5,7 @@
 # These tools are *not* installed in the runtime stage — kept small that way.
 FROM node:22-alpine AS builder
 
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ libc6-compat
 
 WORKDIR /app
 
