@@ -1,7 +1,6 @@
 services:
   chronicle:
-    build: .
-    image: chronicle:latest
+    image: ghcr.io/vitadek/chronicle:latest
     container_name: chronicle
     restart: unless-stopped
     # Ports are now handled by the Caddy reverse proxy
