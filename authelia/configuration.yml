@@ -19,7 +19,7 @@ session:
   cookies:
     - name: 'authelia_session'
       domain: 'chronicle.localhost'
-      authelia_url: 'https://auth.chronicle.localhost:3000'
+      authelia_url: 'https://auth.chronicle.localhost'
       remember_me: '1y'
 
 regulation:

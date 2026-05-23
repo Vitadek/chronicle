@@ -45,7 +45,6 @@ services:
       - "80:80"
       - "443:443/tcp"
       - "443:443/udp" # Enables QUIC/HTTP3
-      - "3000:3000"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - chronicle-caddy-data:/data

@@ -98,6 +98,73 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
       const arrayBuffer = await file.arrayBuffer();
       const result = await mammoth.convertToHtml({ arrayBuffer });
       
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(result.value, 'text/html');
+      const children = Array.from(doc.body.children);
+      
+      const chapters: any[] = [];
+      let currentChapter: any = null;
+      let isSkippingHeader = true;
+
+      children.forEach((child) => {
+        const tag = child.tagName.toLowerCase();
+        const isHeading = ['h1', 'h2', 'h3'].includes(tag);
+        const text = child.textContent?.trim() || '';
+
+        // If we haven't hit a heading yet, we check if we should skip this paragraph
+        // because it looks like contact info (Author, Address, Phone, Email).
+        if (isSkippingHeader && !isHeading && tag === 'p') {
+          const isEmail = /\S+@\S+\.\S+/.test(text);
+          const isPhone = /^[\d\s-().+]{7,}$/.test(text) && /[0-9]/.test(text);
+          const isMetadata = text.toLowerCase().startsWith('word count') || 
+                             text.toLowerCase().startsWith('approx');
+
+          if (isEmail || isPhone || isMetadata || (text.length < 40 && !currentChapter)) {
+            return;
+          }
+          isSkippingHeader = false;
+        }
+
+        if (isHeading || !currentChapter) {
+          isSkippingHeader = false;
+
+          // DE-DUPLICATION LOGIC:
+          // If we have a current chapter with NO content yet (meaning we just hit 
+          // a heading), and we hit ANOTHER heading immediately, we resolve 
+          // which title to keep rather than splitting again.
+          if (isHeading && currentChapter && currentChapter.content === '') {
+            const isPrevGeneric = /^(chapter|ch\.|sect\.|section)\s*\d+\s*$/i.test(currentChapter.title);
+            const isNewGeneric = /^(chapter|ch\.|sect\.|section)\s*\d+\s*$/i.test(text);
+
+            if (isPrevGeneric && !isNewGeneric) {
+              // Current title is "Chapter 1", new one is "Descriptive Name".
+              // Use the descriptive name.
+              currentChapter.title = text;
+              return;
+            } else if (!isPrevGeneric && isNewGeneric) {
+              // Current title is already descriptive, new one is just "Chapter 1".
+              // Ignore the generic one.
+              return;
+            }
+            // If both are generic or both descriptive, we treat it as a deliberate split
+            // and fall through to create a new chapter.
+          }
+          
+          // Start a new chapter
+          currentChapter = {
+            id: Math.random().toString(36).substr(2, 9),
+            title: isHeading ? text || 'Untitled Chapter' : 'Prologue',
+            content: '',
+            lastModified: Date.now(),
+          };
+          chapters.push(currentChapter);
+          
+          if (isHeading) return;
+        }
+
+        currentChapter.content += child.outerHTML;
+      });
+
       const id = Math.random().toString(36).substr(2, 9);
       const title = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, ' ');
       
@@ -107,7 +174,7 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
           title: title || 'Imported Manuscript',
           lastModified: Date.now(),
         },
-        chapters: [
+        chapters: chapters.length > 0 ? chapters : [
           {
             id: '1',
             title: 'Full Manuscript',
@@ -129,7 +196,7 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
 
   return (
     <div className={cn(
-      "min-h-screen w-full flex flex-col items-center py-24 px-6",
+      "min-h-screen w-full flex flex-col items-center py-12 sm:py-24 px-4 sm:px-6 overflow-x-hidden",
       isDarkMode ? "bg-manuscript-dark text-[#F1EDE4]" : "bg-manuscript-light text-black"
     )}>
       <motion.div 
@@ -137,22 +204,22 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-5xl"
       >
-        <div className="flex items-center justify-between mb-16 border-b border-current/10 pb-8">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-10 sm:mb-16 border-b border-black/10 dark:border-white/10 pb-6 sm:pb-8 gap-6 sm:gap-4">
           <div>
-            <h1 className="text-4xl font-serif italic mb-2">The Library</h1>
-            <p className="text-xs uppercase tracking-[0.2em] opacity-40 font-bold">Your Collected Manuscripts</p>
+            <h1 className="text-3xl sm:text-4xl font-serif italic mb-1 sm:mb-2">The Library</h1>
+            <p className="text-[10px] sm:text-xs uppercase tracking-[0.2em] opacity-40 font-bold">Your Collected Manuscripts</p>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center flex-wrap gap-2 sm:gap-4 w-full sm:w-auto">
             <button 
               onClick={onOpenSettings}
               className={cn(
-                "p-3 rounded-2xl transition-all hover:bg-current/5",
+                "p-2.5 sm:p-3 rounded-xl sm:rounded-2xl transition-all hover:bg-black/5 dark:hover:bg-white/5",
                 isDarkMode ? "text-[#F1EDE4]/60 hover:text-[#F1EDE4]" : "text-black/60 hover:text-black"
               )}
               title="Global Settings"
             >
-              <Settings className="w-6 h-6" />
+              <Settings className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
 
             <input 
@@ -166,23 +233,23 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
               onClick={() => fileInputRef.current?.click()}
               disabled={isImporting}
               className={cn(
-                "flex items-center gap-3 px-6 py-3 rounded-2xl transition-all border border-current/10 hover:bg-current/5 disabled:opacity-50",
+                "flex flex-1 sm:flex-none items-center justify-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl transition-all border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50",
                 isDarkMode ? "text-[#F1EDE4]" : "text-black"
               )}
             >
-              {isImporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
-              <span className="text-xs uppercase tracking-widest font-bold">Import</span>
+              {isImporting ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <Upload className="w-4 h-4 sm:w-5 sm:h-5" />}
+              <span className="text-[10px] sm:text-xs uppercase tracking-widest font-bold">Import</span>
             </button>
 
             <button 
               onClick={onCreateNew}
               className={cn(
-                "flex items-center gap-3 px-6 py-3 rounded-2xl transition-all shadow-xl hover:scale-[1.02] active:scale-[0.98]",
+                "flex flex-1 sm:flex-none items-center justify-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl transition-all shadow-xl hover:scale-[1.02] active:scale-[0.98]",
                 isDarkMode ? "bg-[#F1EDE4] text-black" : "bg-black text-white"
               )}
             >
-              <Plus className="w-5 h-5" />
-              <span className="text-xs uppercase tracking-widest font-bold">New Manuscript</span>
+              <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="text-[10px] sm:text-xs uppercase tracking-widest font-bold text-nowrap">New Work</span>
             </button>
           </div>
         </div>
@@ -193,23 +260,23 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
             <p className="text-[10px] uppercase tracking-widest opacity-20 font-bold">Recalling Manuscripts...</p>
           </div>
         ) : manuscripts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-center">
-            <div className="w-20 h-20 rounded-full bg-current/5 flex items-center justify-center mb-8">
-              <Book className="w-8 h-8 opacity-20" />
+          <div className="flex flex-col items-center justify-center py-24 text-center px-6">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center mb-8 mx-auto">
+              <Book className="w-6 h-6 sm:w-8 sm:h-8 opacity-20" />
             </div>
             <h2 className="text-xl font-serif italic mb-4">Your library is currently empty</h2>
-            <p className="text-xs opacity-40 mb-10 max-w-sm leading-relaxed">
+            <p className="text-xs opacity-40 mb-10 max-w-sm mx-auto leading-relaxed">
               Every great story begins with a single page. Start your next journey by creating a new manuscript.
             </p>
             <button 
               onClick={onCreateNew}
-              className="text-xs uppercase tracking-widest font-bold border-b border-current/20 pb-1 hover:opacity-100 opacity-60 transition-opacity"
+              className="text-xs uppercase tracking-widest font-bold border-b border-black/20 dark:border-white/20 pb-1 hover:opacity-100 opacity-60 transition-opacity"
             >
               Begin a New Work
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
             {manuscripts.map((m) => {
               const isConfirming = confirmDeleteId === m.id;
               return (
@@ -221,21 +288,21 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
                     onSelectManuscript(m.id);
                   }}
                   className={cn(
-                    "group relative p-8 rounded-3xl border cursor-pointer transition-all hover:shadow-2xl",
+                    "group relative p-6 sm:p-8 rounded-2xl sm:rounded-3xl border cursor-pointer transition-all hover:shadow-2xl overflow-hidden",
                     isConfirming
                       ? "border-red-500/30 bg-red-500/5"
-                      : "border-current/5",
+                      : "border-black/5 dark:border-white/5",
                     !isConfirming && (isDarkMode ? "hover:bg-white/5" : "hover:bg-black/5"),
                   )}
                 >
-                  <div className="flex flex-col h-full">
-                    <div className="flex items-start justify-between mb-8">
-                      <CoverThumb filename={m.coverArt} className="w-12 h-16 shrink-0" />
+                  <div className="flex flex-col h-full relative z-10">
+                    <div className="flex items-start justify-between mb-6 sm:mb-8">
+                      <CoverThumb filename={m.coverArt} className="w-10 h-14 sm:w-12 sm:h-16 shrink-0" />
                       {isConfirming ? (
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           <button
                             onClick={(e) => handleConfirmDelete(e, m.id)}
-                            className="px-3 py-1.5 bg-red-500 text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-red-600 transition-colors"
+                            className="px-3 py-1.5 bg-red-500 text-white text-[9px] sm:text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-red-600 transition-colors"
                           >
                             Delete
                           </button>
@@ -247,13 +314,10 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
                             className="p-1.5 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
                             aria-label="Cancel"
                           >
-                            <X className="w-4 h-4" />
+                            <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                           </button>
                         </div>
                       ) : (
-                        // Always visible (opacity-40), darkens on hover. The
-                        // previous opacity-0/group-hover pattern hid this
-                        // entirely on touch devices.
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
@@ -262,25 +326,25 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
                           className="p-2 opacity-40 hover:opacity-100 hover:text-red-500 transition-all"
                           aria-label="Delete manuscript"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                         </button>
                       )}
                     </div>
 
-                    <h3 className="text-xl font-serif italic mb-2 line-clamp-2">{m.title}</h3>
-                    <div className="flex items-center gap-2 mb-8 opacity-40">
+                    <h3 className="text-lg sm:text-xl font-serif italic mb-2 line-clamp-2 leading-tight">{m.title}</h3>
+                    <div className="flex items-center gap-2 mb-6 sm:mb-8 opacity-40">
                       <User className="w-3 h-3" />
-                      <span className="text-[10px] uppercase font-bold tracking-widest">{m.author || 'Anonymous'}</span>
+                      <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest truncate">{m.author || 'Anonymous'}</span>
                     </div>
 
-                    <div className="mt-auto pt-6 border-t border-current/5 flex items-center justify-between">
-                      <div className="flex items-center gap-2 opacity-30 text-[9px] uppercase font-bold tracking-widest">
+                    <div className="mt-auto pt-5 sm:pt-6 border-t border-black/5 dark:border-white/5 flex items-center justify-between">
+                      <div className="flex items-center gap-2 opacity-30 text-[8px] sm:text-[9px] uppercase font-bold tracking-widest">
                         <Clock className="w-3 h-3" />
                         <span>{new Date(m.lastModified).toLocaleDateString()}</span>
                       </div>
                       
                       {!!m.wordCount && (
-                        <span className="text-[9px] uppercase font-bold tracking-widest opacity-30">
+                        <span className="text-[8px] sm:text-[9px] uppercase font-bold tracking-widest opacity-30">
                           {formatWordCount(m.wordCount)} Words
                         </span>
                       )}
@@ -295,7 +359,7 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
 
       {/* Decorative background elements */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] dark:opacity-[0.05] z-[-1]">
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/natural-paper.png')] dark:invert" />
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/natural-paper.png')]" />
       </div>
     </div>
   );

@@ -20,21 +20,21 @@
 
 
 # --- LOCAL DEVELOPMENT / TESTING ---
-chronicle.localhost:3000 {
+chronicle.localhost {
     forward_auth authelia:9091 {
-        uri /api/verify?rd=https://auth.chronicle.localhost:3000/
+        uri /api/verify?rd=https://auth.chronicle.localhost/
         copy_headers Remote-User Remote-Email Remote-Groups
     }
     reverse_proxy chronicle:3000
     tls internal
 }
 
-auth.chronicle.localhost:3000 {
+auth.chronicle.localhost {
     reverse_proxy authelia:9091
     tls internal
 }
 
-https://:3000 {
-    redir https://chronicle.localhost:3000{uri}
-    tls internal
+# Catch-all for http -> https redirect
+http://chronicle.localhost, http://auth.chronicle.localhost {
+    redir https://{host}{uri}
 }
