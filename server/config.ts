@@ -23,7 +23,7 @@ const authMode: AuthMode = (
 ) as AuthMode;
 
 export const config = {
-  port: parseInt(process.env.PORT || '80', 10),
+  port: parseInt(process.env.PORT || '3000', 10),
   host: process.env.HOST || '0.0.0.0',
   dataDir: process.env.DATA_DIR || path.join(process.cwd(), 'data'),
   isProd: process.env.NODE_ENV === 'production',

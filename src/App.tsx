@@ -402,6 +402,21 @@ export default function App() {
     }
   };
 
+  const handleImportManuscript = async (manuscript: Manuscript) => {
+    // Fill in author from profile if not set
+    if (!manuscript.metadata.author) {
+      manuscript.metadata.author = userProfile.name || 'Uncredited Author';
+    }
+
+    try {
+      await manuscriptService.create(manuscript);
+      setCurrentManuscriptId(manuscript.metadata.id);
+    } catch (error) {
+      console.error(error);
+      alert('Failed to import manuscript');
+    }
+  };
+
   const handleUpdateChapterContent = useCallback((title: string, content: string) => {
     if (currentChapterId === 'title-page') {
       setMetadata(prev => prev ? ({
@@ -512,6 +527,7 @@ export default function App() {
         <LibraryView 
           onSelectManuscript={setCurrentManuscriptId}
           onCreateNew={handleCreateNew}
+          onImportManuscript={handleImportManuscript}
           onOpenSettings={() => setIsGlobalSettingsOpen(true)}
           isDarkMode={isDarkMode}
           refreshSignal={remoteRevision}

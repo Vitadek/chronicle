@@ -18,3 +18,7 @@ data/
 authelia/db.sqlite3
 authelia/emails.txt
 authelia/notification.txt
+
+# Template docs
+*.docx
+

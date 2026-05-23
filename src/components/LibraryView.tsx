@@ -1,15 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { motion } from 'motion/react';
-import { Book, Plus, Trash2, Clock, BookOpen, User, X, Settings } from 'lucide-react';
-import { ManuscriptMetadata } from '../types';
+import { Book, Plus, Trash2, Clock, BookOpen, User, X, Settings, Upload, Loader2 } from 'lucide-react';
+import { ManuscriptMetadata, Manuscript } from '../types';
 import { manuscriptService } from '../services/manuscriptService';
 import { loadCoverBlobUrl } from '../services/coverService';
 import { cn } from '../lib/utils';
 import { formatWordCount } from '../lib/wordCount';
+import mammoth from 'mammoth';
 
 interface LibraryViewProps {
   onSelectManuscript: (id: string) => void;
   onCreateNew: () => void;
+  onImportManuscript: (manuscript: Manuscript) => void;
   onOpenSettings: () => void;
   isDarkMode: boolean;
   /** Bumped by the parent when remote sync has new data. Triggers a refetch. */
@@ -50,9 +52,11 @@ function CoverThumb({ filename, className }: { filename?: string; className?: st
   );
 }
 
-export function LibraryView({ onSelectManuscript, onCreateNew, onOpenSettings, isDarkMode, refreshSignal }: LibraryViewProps) {
+export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscript, onOpenSettings, isDarkMode, refreshSignal }: LibraryViewProps) {
   const [manuscripts, setManuscripts] = useState<ManuscriptMetadata[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // Two-step delete confirmation. The native confirm() dialog feels jarring
   // against this UI, and on touch devices an opacity-0 hover-only trash icon
   // is functionally invisible.
@@ -85,6 +89,44 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onOpenSettings, i
     }
   };
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.convertToHtml({ arrayBuffer });
+      
+      const id = Math.random().toString(36).substr(2, 9);
+      const title = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, ' ');
+      
+      const manuscript: Manuscript = {
+        metadata: {
+          id,
+          title: title || 'Imported Manuscript',
+          lastModified: Date.now(),
+        },
+        chapters: [
+          {
+            id: '1',
+            title: 'Full Manuscript',
+            content: result.value,
+            lastModified: Date.now(),
+          }
+        ]
+      };
+
+      onImportManuscript(manuscript);
+    } catch (error) {
+      console.error('Import failed:', error);
+      alert('Failed to import .docx file. Please ensure it is a valid Word document.');
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <div className={cn(
       "min-h-screen w-full flex flex-col items-center py-24 px-6",
@@ -112,6 +154,26 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onOpenSettings, i
             >
               <Settings className="w-6 h-6" />
             </button>
+
+            <input 
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept=".docx"
+              className="hidden"
+            />
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isImporting}
+              className={cn(
+                "flex items-center gap-3 px-6 py-3 rounded-2xl transition-all border border-current/10 hover:bg-current/5 disabled:opacity-50",
+                isDarkMode ? "text-[#F1EDE4]" : "text-black"
+              )}
+            >
+              {isImporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
+              <span className="text-xs uppercase tracking-widest font-bold">Import</span>
+            </button>
+
             <button 
               onClick={onCreateNew}
               className={cn(
