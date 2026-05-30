@@ -57,6 +57,43 @@ export default function App() {
     // Default OFF — opt-in. Users who want AI flip it on in Settings.
     return localStorage.getItem('chronicle_ai_enabled') === 'true';
   });
+
+  /**
+   * Touch-controls mode: 'auto' follows the device's pointer type, 'on'/'off'
+   * are manual overrides for when detection is wrong (some Android browsers,
+   * hybrid devices). Drives the `touch-ui` class on <html>, which all
+   * touch-specific styling and the editor's selection toolbar key off.
+   */
+  const [touchControlsMode, setTouchControlsMode] = useState<'auto' | 'on' | 'off'>(() => {
+    const v = localStorage.getItem('chronicle_touch_controls');
+    return v === 'on' || v === 'off' ? v : 'auto';
+  });
+  const [coarsePointer, setCoarsePointer] = useState<boolean>(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(pointer: coarse)').matches
+      : false,
+  );
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const mql = window.matchMedia('(pointer: coarse)');
+    const onChange = (e: MediaQueryListEvent) => setCoarsePointer(e.matches);
+    // addEventListener is the modern API; older Safari used addListener.
+    if (mql.addEventListener) mql.addEventListener('change', onChange);
+    else mql.addListener(onChange);
+    return () => {
+      if (mql.removeEventListener) mql.removeEventListener('change', onChange);
+      else mql.removeListener(onChange);
+    };
+  }, []);
+  const isTouchUI =
+    touchControlsMode === 'on' || (touchControlsMode === 'auto' && coarsePointer);
+  useEffect(() => {
+    localStorage.setItem('chronicle_touch_controls', touchControlsMode);
+  }, [touchControlsMode]);
+  useEffect(() => {
+    document.documentElement.classList.toggle('touch-ui', isTouchUI);
+  }, [isTouchUI]);
+
   const [isAiBubbleMenuEnabled, setIsAiBubbleMenuEnabled] = useState(() => {
     return localStorage.getItem('chronicle_ai_bubble_menu') === 'true';
   });
@@ -523,7 +560,7 @@ export default function App() {
 
   if (!currentManuscriptId || !metadata) {
     return (
-      <PluginProvider syncSignal={remoteRevision}>
+      <PluginProvider syncSignal={remoteRevision} aiConfig={aiConfig}>
         <LibraryView 
           onSelectManuscript={setCurrentManuscriptId}
           onCreateNew={handleCreateNew}
@@ -562,9 +599,9 @@ export default function App() {
     : (chapters.find(c => c.id === currentChapterId) || chapters[0]);
 
   return (
-    <PluginProvider syncSignal={remoteRevision}>
+    <PluginProvider syncSignal={remoteRevision} aiConfig={aiConfig}>
       <div className={cn(
-        "relative flex w-full min-h-screen selection:bg-black/10 dark:selection:bg-white/10",
+        "relative flex w-full min-h-screen-dvh selection:bg-black/10 dark:selection:bg-white/10",
         isDarkMode ? "bg-manuscript-dark" : "bg-manuscript-light"
       )}>
         <Sidebar 
@@ -605,6 +642,8 @@ export default function App() {
           onRevalidateAi={handleRevalidateAi}
           isAiBubbleMenuEnabled={isAiBubbleMenuEnabled}
           onToggleAiBubbleMenu={() => setIsAiBubbleMenuEnabled(!isAiBubbleMenuEnabled)}
+          touchControlsMode={touchControlsMode}
+          onChangeTouchControls={setTouchControlsMode}
           metadata={metadata}
           onUpdateSynopsis={handleUpdateSynopsis}
           currentChapterContent={currentChapter.content}
@@ -656,6 +695,7 @@ export default function App() {
               isFirstLineIndentEnabled={isFirstLineIndentEnabled}
               isAiEnabled={isAiEnabled && !!aiConfig}
               isAiBubbleMenuEnabled={isAiBubbleMenuEnabled}
+              isTouchUI={isTouchUI}
               aiConfig={aiConfig}
               manuscriptFont={manuscriptFont}
               sceneBreakStyle={metadata.sceneBreakStyle || 'classic'}

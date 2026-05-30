@@ -38,18 +38,44 @@ interface SmartThesaurusProps {
   onAiListen?: () => void;
   /** Whether thesaurus button is shown (existing setting). */
   showThesaurus?: boolean;
+  /** Touch UI: render a docked bottom action bar instead of the floating
+      selection bubble (which fights native selection handles on mobile). */
+  isTouchUI?: boolean;
 }
 
-export const SmartThesaurus: React.FC<SmartThesaurusProps> = ({ editor, isDarkMode, pluginKey, showAi, onAiReview, onAiListen, showThesaurus = true }) => {
+export const SmartThesaurus: React.FC<SmartThesaurusProps> = ({ editor, isDarkMode, pluginKey, showAi, onAiReview, onAiListen, showThesaurus = true, isTouchUI = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [synonyms, setSynonyms] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [selectedText, setSelectedText] = useState('');
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
+  // Whether there is a live, non-empty selection in *this* editor. Drives the
+  // docked bottom bar in touch mode. Gated on isFocused so only the editor the
+  // user is actually working in shows a bar (title vs body each mount one).
+  const [hasSelection, setHasSelection] = useState(false);
+  useEffect(() => {
+    if (!editor) return;
+    const update = () => {
+      const { from, to } = editor.state.selection;
+      const text = editor.state.doc.textBetween(from, to, ' ').trim();
+      setHasSelection(from !== to && text.length > 0 && editor.isFocused);
+    };
+    update();
+    editor.on('selectionUpdate', update);
+    editor.on('transaction', update);
+    editor.on('focus', update);
+    editor.on('blur', update);
+    return () => {
+      editor.off('selectionUpdate', update);
+      editor.off('transaction', update);
+      editor.off('focus', update);
+      editor.off('blur', update);
+    };
+  }, [editor]);
+
   const handleLookup = useCallback(async () => {
     if (!editor) return;
-    
+
     const { from, to } = editor.state.selection;
     const text = editor.state.doc.textBetween(from, to, ' ');
     if (!text || text.trim().length === 0) return;
@@ -57,9 +83,9 @@ export const SmartThesaurus: React.FC<SmartThesaurusProps> = ({ editor, isDarkMo
     setSelectedText(text.trim());
     setIsOpen(true);
     setSynonyms([]);
-    
+
     const cleanText = text.trim().toLowerCase();
-    
+
     if (OFFLINE_THESAURUS[cleanText]) {
       setSynonyms(OFFLINE_THESAURUS[cleanText]);
     } else {
@@ -81,98 +107,146 @@ export const SmartThesaurus: React.FC<SmartThesaurusProps> = ({ editor, isDarkMo
 
   if (!editor) return null;
 
+  // Shared action buttons, rendered into either the floating bubble (desktop)
+  // or the docked bottom bar (touch). `big` bumps padding + icon size so the
+  // bottom bar hits comfortable ~44px touch targets.
+  const Actions: React.FC<{ big?: boolean }> = ({ big }) => {
+    const pad = big ? 'p-3' : 'p-2';
+    const icon = big ? 'w-5 h-5' : 'w-3.5 h-3.5';
+    return (
+      <>
+        <div className="flex items-center">
+          <button
+            onClick={() => editor.chain().focus().toggleBold().run()}
+            className={cn(
+              pad, "rounded-full transition-colors",
+              editor.isActive('bold')
+                ? (isDarkMode ? "bg-white/10 text-white" : "bg-black/5 text-black")
+                : "hover:bg-black/5 dark:hover:bg-white/5 opacity-60 hover:opacity-100"
+            )}
+            title="Bold"
+          >
+            <Bold className={icon} />
+          </button>
+          <button
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+            className={cn(
+              pad, "rounded-full transition-colors",
+              editor.isActive('italic')
+                ? (isDarkMode ? "bg-white/10 text-white" : "bg-black/5 text-black")
+                : "hover:bg-black/5 dark:hover:bg-white/5 opacity-60 hover:opacity-100"
+            )}
+            title="Italic"
+          >
+            <Italic className={icon} />
+          </button>
+          <button
+            onClick={() => editor.chain().focus().toggleUnderline().run()}
+            className={cn(
+              pad, "rounded-full transition-colors",
+              editor.isActive('underline')
+                ? (isDarkMode ? "bg-white/10 text-white" : "bg-black/5 text-black")
+                : "hover:bg-black/5 dark:hover:bg-white/5 opacity-60 hover:opacity-100"
+            )}
+            title="Underline"
+          >
+            <Underline className={icon} />
+          </button>
+        </div>
+
+        <div className="w-px h-4 bg-current opacity-10 mx-1" />
+
+        {showThesaurus && (
+          <button
+            onClick={handleLookup}
+            className={cn(pad, "rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors opacity-60 hover:opacity-100")}
+            title="Thesaurus"
+          >
+            <Search className={icon} />
+          </button>
+        )}
+
+        {showAi && onAiReview && (
+          <button
+            onClick={() => onAiReview()}
+            className={cn(pad, "rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors opacity-60 hover:opacity-100")}
+            title="AI Review the selection"
+          >
+            <Sparkles className={icon} />
+          </button>
+        )}
+
+        {showAi && onAiListen && (
+          <button
+            onClick={() => onAiListen()}
+            className={cn(pad, "rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors opacity-60 hover:opacity-100")}
+            title="Listen to the selection"
+          >
+            <Volume2 className={icon} />
+          </button>
+        )}
+      </>
+    );
+  };
+
   return (
     <>
-      <BubbleMenu 
-        editor={editor} 
-        pluginKey={pluginKey}
-        shouldShow={({ state, from, to }) => {
-          return from !== to && state.doc.textBetween(from, to).trim().length > 0;
-        }}
-      >
-        <motion.div 
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          className={cn(
-            // Explicit text color: icons inside inherit currentColor for their
-            // stroke, and the default page color isn't reliable (the bubble
-            // portals out of the editor in some layouts). Force a near-black
-            // ink in light mode, cream in dark mode.
-            "flex items-center gap-0.5 p-1 rounded-full border shadow-2xl backdrop-blur-md",
-            isDarkMode
-              ? "bg-[#232220]/95 border-white/10 text-[#F1EDE4]"
-              : "bg-white/95 border-black/10 text-[#1A1A1A]"
-          )}
+      {/* Desktop / mouse: floating bubble anchored to the selection. */}
+      {!isTouchUI && (
+        <BubbleMenu
+          editor={editor}
+          pluginKey={pluginKey}
+          shouldShow={({ state, from, to }) => {
+            return from !== to && state.doc.textBetween(from, to).trim().length > 0;
+          }}
         >
-          <div className="flex items-center">
-            <button
-              onClick={() => editor.chain().focus().toggleBold().run()}
-              className={cn(
-                "p-2 rounded-full transition-colors",
-                editor.isActive('bold') 
-                  ? (isDarkMode ? "bg-white/10 text-white" : "bg-black/5 text-black") 
-                  : "hover:bg-black/5 dark:hover:bg-white/5 opacity-60 hover:opacity-100"
-              )}
-            >
-              <Bold className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => editor.chain().focus().toggleItalic().run()}
-              className={cn(
-                "p-2 rounded-full transition-colors",
-                editor.isActive('italic') 
-                  ? (isDarkMode ? "bg-white/10 text-white" : "bg-black/5 text-black") 
-                  : "hover:bg-black/5 dark:hover:bg-white/5 opacity-60 hover:opacity-100"
-              )}
-            >
-              <Italic className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => editor.chain().focus().toggleUnderline().run()}
-              className={cn(
-                "p-2 rounded-full transition-colors",
-                editor.isActive('underline') 
-                  ? (isDarkMode ? "bg-white/10 text-white" : "bg-black/5 text-black") 
-                  : "hover:bg-black/5 dark:hover:bg-white/5 opacity-60 hover:opacity-100"
-              )}
-            >
-              <Underline className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className={cn(
+              // Explicit text color: icons inside inherit currentColor for their
+              // stroke, and the default page color isn't reliable (the bubble
+              // portals out of the editor in some layouts). Force a near-black
+              // ink in light mode, cream in dark mode.
+              "flex items-center gap-0.5 p-1 rounded-full border shadow-2xl backdrop-blur-md",
+              isDarkMode
+                ? "bg-[#232220]/95 border-white/10 text-[#F1EDE4]"
+                : "bg-white/95 border-black/10 text-[#1A1A1A]"
+            )}
+          >
+            <Actions />
+          </motion.div>
+        </BubbleMenu>
+      )}
 
-          <div className="w-px h-4 bg-current opacity-10 mx-1" />
-
-          {showThesaurus && (
-            <button
-              onClick={handleLookup}
-              className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors opacity-60 hover:opacity-100"
-              title="Thesaurus"
+      {/* Touch: docked bottom action bar. Appears while a selection is live.
+          onPointerDown preventDefault keeps focus (and the selection) in the
+          editor when a button is tapped, so actions don't lose their target. */}
+      {isTouchUI && (
+        <AnimatePresence>
+          {hasSelection && (
+            <motion.div
+              initial={{ y: 80, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 80, opacity: 0 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+              className="fixed bottom-0 inset-x-0 z-[80] flex justify-center px-3 pb-3 safe-pad-bottom pointer-events-none"
+              onPointerDown={(e) => e.preventDefault()}
             >
-              <Search className="w-3.5 h-3.5" />
-            </button>
+              <div
+                className={cn(
+                  "pointer-events-auto flex items-center gap-1 px-2 py-1.5 rounded-2xl border shadow-2xl backdrop-blur-md",
+                  isDarkMode
+                    ? "bg-[#232220]/95 border-white/10 text-[#F1EDE4]"
+                    : "bg-white/95 border-black/10 text-[#1A1A1A]"
+                )}
+              >
+                <Actions big />
+              </div>
+            </motion.div>
           )}
-
-          {showAi && onAiReview && (
-            <button
-              onClick={() => onAiReview()}
-              className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors opacity-60 hover:opacity-100"
-              title="AI Review the selection"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {showAi && onAiListen && (
-            <button
-              onClick={() => onAiListen()}
-              className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors opacity-60 hover:opacity-100"
-              title="Listen to the selection"
-            >
-              <Volume2 className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </motion.div>
-      </BubbleMenu>
+        </AnimatePresence>
+      )}
 
       <AnimatePresence>
         {isOpen && (
@@ -192,7 +266,7 @@ export const SmartThesaurus: React.FC<SmartThesaurusProps> = ({ editor, isDarkMo
                     <Search className="w-4 h-4" />
                     <span className="text-[10px] uppercase tracking-widest font-bold">Thesaurus</span>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setIsOpen(false)}
                     className="p-2 rounded-full hover:bg-current/5 transition-colors"
                   >
@@ -207,7 +281,7 @@ export const SmartThesaurus: React.FC<SmartThesaurusProps> = ({ editor, isDarkMo
               <div className="p-4 max-h-[300px] overflow-y-auto">
                 <div className="grid grid-cols-1 gap-2">
                   {synonyms.map((word, i) => (
-                    <div 
+                    <div
                       key={i}
                       className="group flex items-center justify-between p-3 rounded-xl hover:bg-current/5 transition-all cursor-pointer"
                       onClick={() => handleReplace(word)}
@@ -221,7 +295,7 @@ export const SmartThesaurus: React.FC<SmartThesaurusProps> = ({ editor, isDarkMo
                           e.stopPropagation();
                           handleCopy(word, i);
                         }}
-                        className="p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-current/10"
+                        className="p-2 rounded-lg opacity-0 group-hover:opacity-100 touch:opacity-100 transition-opacity hover:bg-current/10"
                       >
                         {copiedIndex === i ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
                       </button>
@@ -232,7 +306,7 @@ export const SmartThesaurus: React.FC<SmartThesaurusProps> = ({ editor, isDarkMo
 
               <div className="p-4 bg-current/5 flex items-center justify-center">
                 <span className="text-[9px] uppercase tracking-widest opacity-30 font-bold">
-                  Click a word to replace in text
+                  Tap a word to replace in text
                 </span>
               </div>
             </motion.div>

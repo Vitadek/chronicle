@@ -32,6 +32,8 @@ interface EditorViewProps {
   isAiEnabled?: boolean;
   /** When true, AI Review and AI Listen show up in the selection bubble toolbar. */
   isAiBubbleMenuEnabled?: boolean;
+  /** Touch UI: swap the floating selection bubble for a docked bottom bar. */
+  isTouchUI?: boolean;
   /** Full AI config (provider + key + model). Null when AI isn't set up. */
   aiConfig?: AiConfig | null;
   isSidebarOpen: boolean;
@@ -68,6 +70,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   isFirstLineIndentEnabled = true,
   isAiEnabled = true,
   isAiBubbleMenuEnabled = false,
+  isTouchUI = false,
   aiConfig,
   isSidebarOpen,
   sceneBreakStyle,
@@ -743,6 +746,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 editor={titleEditor}
                 isDarkMode={isDarkMode}
                 pluginKey="titleThesaurus"
+                isTouchUI={isTouchUI}
                 showThesaurus={isThesaurusEnabled}
                 showAi={isAiBubbleMenuEnabled && isAiEnabled}
                 onAiReview={() => handleAiAction('ai_review')}
@@ -763,6 +767,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 editor={editor}
                 isDarkMode={isDarkMode}
                 pluginKey="contentThesaurus"
+                isTouchUI={isTouchUI}
                 showThesaurus={isThesaurusEnabled}
                 showAi={isAiBubbleMenuEnabled && isAiEnabled}
                 onAiReview={() => handleAiAction('ai_review')}
@@ -772,7 +777,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
             {/* Plugin Layer */}
             {editor && !isTitlePage && (
-              <ActivePluginHost editor={editor} manuscriptId={manuscriptId} />
+              <ActivePluginHost editor={editor} manuscriptId={manuscriptId} aiConfig={aiConfig} />
             )}
 
             {/* Inline Comment Entry UI */}

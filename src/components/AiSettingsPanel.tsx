@@ -196,6 +196,40 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
             </select>
           </div>
 
+          {/* Limits */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] uppercase tracking-widest font-bold opacity-30 mb-2">Input Context</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  value={cfg.contextLimit || 10000}
+                  onChange={(e) => setField('contextLimit', parseInt(e.target.value, 10))}
+                  className={cn(
+                    'w-full px-3 py-2 rounded-lg text-xs font-mono bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
+                    isDarkMode ? 'text-white' : 'text-black',
+                  )}
+                />
+                <span className="absolute right-3 top-2 text-[8px] opacity-20 font-bold uppercase">Chars</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-[10px] uppercase tracking-widest font-bold opacity-30 mb-2">Output Limit</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  value={cfg.maxOutputTokens || 2048}
+                  onChange={(e) => setField('maxOutputTokens', parseInt(e.target.value, 10))}
+                  className={cn(
+                    'w-full px-3 py-2 rounded-lg text-xs font-mono bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
+                    isDarkMode ? 'text-white' : 'text-black',
+                  )}
+                />
+                <span className="absolute right-3 top-2 text-[8px] opacity-20 font-bold uppercase">Tokens</span>
+              </div>
+            </div>
+          </div>
+
           {/* Custom models */}
           <div>
             <label className="block text-[10px] uppercase tracking-widest font-bold opacity-30 mb-2">Add Your Own Model</label>

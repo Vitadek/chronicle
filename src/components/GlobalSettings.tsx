@@ -188,7 +188,7 @@ export function GlobalSettings({
                           {isExternal && (
                             <button 
                               onClick={() => handleDeletePlugin(plugin.id)}
-                              className="p-1 rounded opacity-0 group-hover/item:opacity-30 hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 transition-all"
+                              className="p-1 rounded opacity-0 group-hover/item:opacity-30 hover:opacity-100 touch:opacity-50 hover:bg-red-500/10 hover:text-red-500 transition-all"
                               title="Delete plugin"
                             >
                               <Trash2 className="w-3 h-3" />

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { Book, Plus, MoreVertical, Menu, X, Trash2, Settings, ChevronLeft, Moon, Sun, Cloud, Layout, Copy, GripVertical, FileText, List, Search, Upload, Check, Download, Briefcase, User, Info, Library, Sparkles, AlignLeft, Bot } from 'lucide-react';
+import { Book, Plus, MoreVertical, Menu, X, Trash2, Settings, ChevronLeft, Moon, Sun, Cloud, Layout, Copy, GripVertical, FileText, List, Search, Upload, Check, Download, Briefcase, User, Info, Library, Sparkles, AlignLeft, Bot, Smartphone } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { Chapter, ManuscriptMetadata, UserProfile } from '../types';
@@ -54,6 +54,8 @@ interface SidebarProps {
   /** First-line indent for body paragraphs in the editor. SMF default ON. */
   isFirstLineIndentEnabled: boolean;
   onToggleFirstLineIndent: () => void;
+  touchControlsMode: 'auto' | 'on' | 'off';
+  onChangeTouchControls: (mode: 'auto' | 'on' | 'off') => void;
   /** Whether the AI agent menu is available in the editor. */
   isAiEnabled: boolean;
   onToggleAiEnabled: () => void;
@@ -170,13 +172,13 @@ const SortableChapter: React.FC<SortableChapterProps> = ({
         <div 
           {...attributes} 
           {...listeners} 
-          className="cursor-grab active:cursor-grabbing p-1 -ml-1 opacity-0 group-hover:opacity-40 hover:opacity-100 transition-opacity"
+          className="cursor-grab active:cursor-grabbing p-1 -ml-1 opacity-0 group-hover:opacity-40 hover:opacity-100 touch:opacity-50 transition-opacity"
           onClick={(e) => e.stopPropagation()}
         >
           <GripVertical className="w-3.5 h-3.5" />
         </div>
         <div className="flex flex-col gap-1 overflow-hidden">
-          <span className="text-sm font-medium leading-none truncate">{chapter.title}</span>
+          <span className={cn("text-sm font-medium leading-none truncate", !chapter.title && "opacity-40 italic")}>{chapter.title || 'Untitled Chapter'}</span>
           <span className="text-[9px] uppercase tracking-wider opacity-40 flex items-center gap-2">
             <span>{formatWordCount(wordCount)} words</span>
             <span className="opacity-50">·</span>
@@ -243,6 +245,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleZenMode,
   isFirstLineIndentEnabled,
   onToggleFirstLineIndent,
+  touchControlsMode,
+  onChangeTouchControls,
   isAiEnabled,
   onToggleAiEnabled,
   aiConfig,
@@ -492,7 +496,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      <div className="fixed top-8 left-8 z-[60] ui-element-container h-24 w-24 -mt-8 -ml-8 flex items-center justify-center group pointer-events-none hover:pointer-events-auto">
+      <div className="fixed top-8 left-8 z-[60] ui-element-container h-24 w-24 -mt-8 -ml-8 safe-pad-toggle flex items-center justify-center group pointer-events-none hover:pointer-events-auto">
         <div className="absolute top-8 left-8 w-1 h-8 bg-black/5 dark:bg-white/5 rounded-r-full group-hover:opacity-0 transition-opacity hidden sm:block" />
         <button 
           onClick={onToggle}
@@ -513,7 +517,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             exit={{ x: -250, opacity: 0 }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
             className={cn(
-              "fixed inset-y-0 left-0 z-50 flex flex-col pt-20 sm:pt-24 pb-8 px-4 sm:px-6 border-r overflow-hidden w-80",
+              "app-sidebar fixed inset-y-0 left-0 z-50 flex flex-col pt-20 sm:pt-24 pb-8 px-4 sm:px-6 border-r overflow-hidden w-[88vw] max-w-80",
               isDarkMode 
                 ? "bg-manuscript-dark border-white/5 text-white/40" 
                 : "bg-manuscript-light border-black/5 text-black/40",
@@ -533,7 +537,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </span>
                 </div>
                 <h1 className={cn("text-xl sm:text-2xl font-serif italic px-2 truncate", isDarkMode ? "text-white" : "text-black")}>
-                  {view === 'outline' ? (chapters.find(c => c.id === currentChapterId)?.title) : metadata.title}
+                  {view === 'outline' ? (chapters.find(c => c.id === currentChapterId)?.title || 'Untitled Chapter') : (metadata.title || 'Untitled Manuscript')}
                 </h1>
               </div>
               <div className="flex items-center gap-0.5 shrink-0">
@@ -1197,6 +1201,43 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           </div>
                         </button>
 
+                        {/* Touch controls: Auto follows the device's pointer
+                            type; On/Off are manual overrides for when detection
+                            is wrong. Drives the docked selection bar + larger
+                            tap targets. */}
+                        <div className="px-4 py-3 rounded-xl">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-3">
+                              <Smartphone className="w-4 h-4" />
+                              <span className={cn("font-medium text-sm", isDarkMode ? "text-white/80" : "text-black/80")}>
+                                Touch Controls
+                              </span>
+                            </div>
+                          </div>
+                          <div className={cn(
+                            "flex items-center gap-1 p-1 rounded-xl",
+                            isDarkMode ? "bg-white/5" : "bg-black/5"
+                          )}>
+                            {(['auto', 'on', 'off'] as const).map((mode) => (
+                              <button
+                                key={mode}
+                                onClick={() => onChangeTouchControls(mode)}
+                                className={cn(
+                                  "flex-1 px-2 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all",
+                                  touchControlsMode === mode
+                                    ? (isDarkMode ? "bg-white text-black shadow" : "bg-black text-white shadow")
+                                    : "opacity-50 hover:opacity-100"
+                                )}
+                              >
+                                {mode === 'auto' ? 'Auto' : mode === 'on' ? 'On' : 'Off'}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="text-[10px] opacity-40 mt-2 leading-relaxed">
+                            Bigger tap targets and a bottom selection bar for phones and tablets. Auto detects your device.
+                          </p>
+                        </div>
+
                         <AiSettingsPanel
                           isDarkMode={isDarkMode}
                           isAiEnabled={isAiEnabled}
@@ -1333,7 +1374,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           {confirmDeleteManuscript ? (
                             <div className="space-y-3">
                               <p className="text-[11px] opacity-60 leading-relaxed">
-                                Permanently delete <span className="font-bold">{metadata.title}</span> and all its chapters? This cannot be undone.
+                                Permanently delete <span className="font-bold">{metadata.title || 'Untitled Manuscript'}</span> and all its chapters? This cannot be undone.
                               </p>
                               <div className="flex items-center gap-2">
                                 <button

@@ -5,13 +5,14 @@ import { ChroniclePlugin, PluginContext } from './types';
 import { PLUGIN_REGISTRY } from './registry';
 import { pluginService } from '../services/pluginService';
 import { pluginExternalService } from '../services/pluginExternalService';
+import { AiConfig } from '../services/aiConfig';
 
 interface PluginManagerContextType {
   enabledPlugins: Set<string>;
   allPlugins: ChroniclePlugin[];
   togglePlugin: (pluginId: string, manuscriptId?: string | null) => Promise<void>;
   updatePluginState: (pluginId: string, newState: any) => Promise<void>;
-  getPluginContext: (pluginId: string, editor: Editor, manuscriptId: string) => PluginContext;
+  getPluginContext: (pluginId: string, editor: Editor, manuscriptId: string, aiConfig: AiConfig | null) => PluginContext;
   isLoading: boolean;
   refreshPlugins: () => Promise<void>;
 }
@@ -24,7 +25,7 @@ export const usePlugins = () => {
   return context;
 };
 
-export const PluginProvider: React.FC<{ children: React.ReactNode; syncSignal?: number }> = ({ children, syncSignal }) => {
+export const PluginProvider: React.FC<{ children: React.ReactNode; syncSignal?: number; aiConfig: AiConfig | null }> = ({ children, syncSignal, aiConfig }) => {
   const [pluginRecords, setPluginRecords] = useState<PluginStateRecord[]>([]);
   const [dynamicPlugins, setDynamicPlugins] = useState<ChroniclePlugin[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -127,13 +128,14 @@ export const PluginProvider: React.FC<{ children: React.ReactNode; syncSignal?: 
     }
   }, [pluginRecords, loadPlugins]);
 
-  const getPluginContext = useCallback((pluginId: string, editor: Editor, manuscriptId: string): PluginContext => {
+  const getPluginContext = useCallback((pluginId: string, editor: Editor, manuscriptId: string, currentAiConfig: AiConfig | null): PluginContext => {
     const record = pluginRecords.find(r => r.pluginId === pluginId);
     const state = record ? JSON.parse(record.state) : {};
 
     return {
       editor,
       manuscriptId,
+      aiConfig: currentAiConfig,
       state,
       updateState: (nextState: any) => updatePluginState(pluginId, nextState),
       invokePortalCommand: async (command, args) => {
@@ -160,7 +162,7 @@ export const PluginProvider: React.FC<{ children: React.ReactNode; syncSignal?: 
   );
 };
 
-export const ActivePluginHost: React.FC<{ editor: Editor; manuscriptId: string }> = ({ editor, manuscriptId }) => {
+export const ActivePluginHost: React.FC<{ editor: Editor; manuscriptId: string; aiConfig: AiConfig | null }> = ({ editor, manuscriptId, aiConfig }) => {
   const { enabledPlugins, allPlugins, getPluginContext } = usePlugins();
 
   return (
@@ -172,7 +174,7 @@ export const ActivePluginHost: React.FC<{ editor: Editor; manuscriptId: string }
         const PluginComponent = manifest.component;
         if (!PluginComponent) return null;
         
-        const context = getPluginContext(pluginId, editor, manuscriptId);
+        const context = getPluginContext(pluginId, editor, manuscriptId, aiConfig);
         return <PluginComponent key={pluginId} {...context} />;
       })}
     </>

@@ -196,7 +196,7 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
 
   return (
     <div className={cn(
-      "min-h-screen w-full flex flex-col items-center py-12 sm:py-24 px-4 sm:px-6 overflow-x-hidden",
+      "min-h-screen-dvh w-full flex flex-col items-center py-12 sm:py-24 px-4 sm:px-6 overflow-x-hidden",
       isDarkMode ? "bg-manuscript-dark text-[#F1EDE4]" : "bg-manuscript-light text-black"
     )}>
       <motion.div 
@@ -331,7 +331,7 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
                       )}
                     </div>
 
-                    <h3 className="text-lg sm:text-xl font-serif italic mb-2 line-clamp-2 leading-tight">{m.title}</h3>
+                    <h3 className="text-lg sm:text-xl font-serif italic mb-2 line-clamp-2 leading-tight">{m.title || 'Untitled Manuscript'}</h3>
                     <div className="flex items-center gap-2 mb-6 sm:mb-8 opacity-40">
                       <User className="w-3 h-3" />
                       <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest truncate">{m.author || 'Anonymous'}</span>

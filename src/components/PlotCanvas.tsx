@@ -220,7 +220,7 @@ export const PlotCanvas: React.FC<PlotCanvasProps> = ({
               linkingFrom === node.id || editingNode === node.id ? 'ring-2 ring-blue-400' : 'hover:shadow-lg',
               dragRef.current?.id === node.id ? 'cursor-grabbing' : 'cursor-grab',
             )}
-            style={{ left: node.x, top: node.y, width: 200 }}
+            style={{ left: node.x, top: node.y, width: 200, touchAction: 'none' }}
           >
             {/* Drag Handle Overlay */}
             <div className="absolute top-0 left-0 right-0 h-1.5 opacity-0 group-hover/node:opacity-20 bg-current rounded-t-xl transition-opacity pointer-events-none" />

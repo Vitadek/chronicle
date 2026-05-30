@@ -86,9 +86,16 @@ export interface AiConfig {
   /** Only meaningful when provider supports TTS. */
   ttsModel?: string;
   ttsVoice?: string;
-  /** Anthropic requires max_tokens; default 4096 covers the prose responses
-   *  this app generates. */
-  maxTokens?: number;
+  /** 
+   * Input Limit: How much of the preceding manuscript text to include 
+   * in the prompt (in characters). Defaults to 10000 (~2500 tokens).
+   */
+  contextLimit?: number;
+  /** 
+   * Output Limit: Maximum tokens for the AI response. 
+   * Anthropic requires this; others treat it as a cap.
+   */
+  maxOutputTokens?: number;
   /**
    * User-added model IDs, scoped per provider. The Settings dropdown
    * surfaces these alongside the suggested list in PROVIDERS.
@@ -166,5 +173,7 @@ export function defaultAiConfig(): AiConfig {
   return {
     provider: 'openai',
     textModel: PROVIDERS.openai.defaultTextModel,
+    contextLimit: 10000,
+    maxOutputTokens: 2048,
   };
 }

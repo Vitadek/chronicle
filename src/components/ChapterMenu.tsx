@@ -69,7 +69,7 @@ export const ChapterMenu: React.FC<ChapterMenuProps> = ({
           'p-1 rounded transition-all',
           open
             ? 'opacity-100 bg-black/5 dark:bg-white/5'
-            : 'opacity-0 group-hover:opacity-40 hover:opacity-100',
+            : 'opacity-0 group-hover:opacity-40 hover:opacity-100 touch:opacity-60',
         )}
         title="More actions"
       >

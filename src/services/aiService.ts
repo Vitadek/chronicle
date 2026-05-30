@@ -64,7 +64,7 @@ export async function getAiResponse(input: string, cfg: AiConfig, system?: strin
       provider: cfg.provider,
       model: cfg.textModel,
       input,
-      maxTokens: cfg.maxTokens,
+      maxTokens: cfg.maxOutputTokens,
       system,
     }),
   });

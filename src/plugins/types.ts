@@ -1,4 +1,5 @@
 import { Editor } from '@tiptap/react';
+import { AiConfig } from '../services/aiConfig';
 
 /**
  * The runtime context provided to every active plugin instance.
@@ -8,6 +9,8 @@ export interface PluginContext {
   editor: Editor;
   /** The ID of the manuscript currently being edited. */
   manuscriptId: string;
+  /** The user's AI configuration (provider, model, etc.) */
+  aiConfig: AiConfig | null;
   /** Arbitrary JSON-serializable state for this plugin instance. */
   state: any;
   /** Persists state changes to the backend sync engine. */

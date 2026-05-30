@@ -297,3 +297,57 @@ body:not(.zen-active) .ui-element {
 ::-webkit-scrollbar-thumb {
   @apply bg-black/5 rounded-full hover:bg-black/10;
 }
+
+/* ============================================================
+   Touch / mobile refinements
+   ============================================================ */
+
+/* Touch UI is driven by a single class on <html>: `touch-ui`. App.tsx adds
+   it when the device reports a coarse pointer (auto) OR when the user forces
+   it on in Settings, and removes it when forced off. Keying the touch-only
+   styles off this class (rather than @media (pointer: coarse) directly) makes
+   the Settings override authoritative across detection failures. */
+@custom-variant touch (&:is(.touch-ui *));
+
+/* Dynamic viewport height. Chrome on Android grows/shrinks the visible
+   area as the URL bar collapses; 100vh overshoots and hides content
+   behind the toolbar. Prefer 100dvh, falling back to 100vh. Harmless on
+   desktop (dvh == vh with no collapsing chrome), so left unconditional. */
+.min-h-screen-dvh {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Respect gesture-nav / display cutouts when edge-to-edge (index.html sets
+   viewport-fit=cover). Insets resolve to 0 on non-notched/desktop, so this
+   is safe to leave unconditional. */
+@supports (padding: env(safe-area-inset-top)) {
+  .safe-pad-toggle {
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+  }
+  .safe-pad-bottom {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* No hover on touch: controls gated purely behind :hover are invisible and
+   unusable. Reveal container-gated UI (e.g. the sidebar toggle wrapper) when
+   in touch mode. Zen-mode hiding still wins via specificity. */
+html.touch-ui .ui-element-container .ui-element {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Tap-target pass (touch mode only). The editor's prose is left untouched;
+   we enlarge the small icon-only controls inside the sidebar to a
+   comfortable ~44px and center their glyphs. Text buttons already get
+   their height from padding, so they're excluded via :only-child. */
+html.touch-ui .app-sidebar button:has(> svg:only-child),
+html.touch-ui .app-sidebar a:has(> svg:only-child) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+}

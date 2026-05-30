@@ -1,12 +1,25 @@
 import { ChroniclePlugin } from './types';
+import { ChibiCompanion } from './chibi/ChibiCompanion';
 
 /**
  * Global registry of all available plugins in the system.
  * Add new plugin manifests here to make them available in the Settings menu.
  */
 export const PLUGIN_REGISTRY: ChroniclePlugin[] = [
-  // Registry is empty by default for a clean ship.
-  // Add plugins like ChibiCompanion here when desired.
+  {
+    id: 'chronicle.chibi.assistant',
+    name: 'Chibi Assistant',
+    description: 'Pixel-art workspace interaction avatar companion.',
+    defaultState: { petName: 'ChronicleBot', totalInteractions: 0 },
+    component: ChibiCompanion,
+    portalCommands: {
+      chibi_rename: async (context, args) => {
+        const newName = args.join(' ');
+        if (!newName) return;
+        context.updateState({ ...context.state, petName: newName });
+      }
+    }
+  }
 ];
 
 /**
