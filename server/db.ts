@@ -151,6 +151,38 @@ const migrations: Array<{ name: string; up: (db: Database.Database) => void }> =
       `);
     },
   },
+  {
+    name: '005_collab_ydocs',
+    up: (d) => {
+      // Yjs/CRDT document store: one row per collaborative document
+      // (documentName = a chapter id). `data` is the encoded Y.Doc state
+      // persisted by Hocuspocus and is the source of truth for live editing.
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS ydocs (
+          name        TEXT PRIMARY KEY,
+          data        BLOB NOT NULL,
+          updated_at  INTEGER NOT NULL
+        );
+      `);
+    },
+  },
+  {
+    name: '006_chapter_pre_collab',
+    up: (d) => {
+      // A chapter's original HTML, captured once before the first collab
+      // snapshot overwrites it — so pre-collab prose is always recoverable.
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS chapter_pre_collab (
+          user_id        TEXT NOT NULL,
+          manuscript_id  TEXT NOT NULL,
+          chapter_id     TEXT NOT NULL,
+          content        TEXT NOT NULL,
+          backed_up_at   INTEGER NOT NULL,
+          PRIMARY KEY (user_id, manuscript_id, chapter_id)
+        );
+      `);
+    },
+  },
 ];
 
 function runMigrations(): void {

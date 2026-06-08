@@ -23,7 +23,11 @@ export const Epigraph = Node.create({
   parseHTML() {
     return [
       {
+        // Priority above StarterKit's blockquote (default 50) so an epigraph
+        // blockquote parses back to an epigraph node — keeping data-type — on
+        // HTML reload / Y.Doc round-trip instead of degrading to a blockquote.
         tag: 'blockquote[data-type="epigraph"]',
+        priority: 100,
       },
     ];
   },
