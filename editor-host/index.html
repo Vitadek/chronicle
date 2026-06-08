@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Embedded editing canvas inside a native WebView: disabling pinch-zoom
+         here is correct (it's an app surface, not a web page). -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"
+    />
+    <title>Chronicle Editor</title>
+  </head>
+  <body>
+    <div class="novel-editor">
+      <div id="editor"></div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
