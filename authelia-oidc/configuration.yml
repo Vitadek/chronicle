@@ -1,0 +1,72 @@
+###############################################################
+# Authelia Configuration for Chronicle — OIDC stack.
+#
+# Secrets + hostnames come from the environment (docker-compose.oidc.yml -> .env)
+# so prod is just an .env change:
+#   - AUTHELIA_SESSION_SECRET, AUTHELIA_STORAGE_ENCRYPTION_KEY,
+#     AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET,
+#     AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET  (Authelia native env mapping)
+#   - CHRONICLE_HOST / AUTH_HOST  (env template func below)
+#   - issuer key + client-secret hash are mounted secret files.
+# Requires X_AUTHELIA_CONFIG_FILTERS=template (set on the authelia service).
+###############################################################
+
+server:
+  address: 'tcp://0.0.0.0:9091'
+
+log:
+  level: info
+
+authentication_backend:
+  password_reset:
+    disable: true
+  file:
+    path: /config/users_database.yml
+
+session:
+  cookies:
+    - name: 'authelia_session'
+      domain: '{{ env "CHRONICLE_HOST" }}'
+      authelia_url: 'https://{{ env "AUTH_HOST" }}'
+      remember_me: '1y'
+
+regulation:
+  max_retries: 3
+  find_time: '2m'
+  ban_time: '5m'
+
+storage:
+  local:
+    path: /config/db.sqlite3
+
+access_control:
+  default_policy: deny
+  rules:
+    - domain: ['{{ env "CHRONICLE_HOST" }}', '{{ env "AUTH_HOST" }}']
+      policy: one_factor
+
+notifier:
+  filesystem:
+    filename: /config/emails.txt
+
+identity_providers:
+  oidc:
+    jwks:
+      - key_id: 'main'
+        algorithm: 'RS256'
+        use: 'sig'
+        key: {{ secret "/config/oidc_issuer.pem" | mindent 10 "|" | msquote }}
+    clients:
+      - client_id: '{{ env "AUTH_OIDC_CLIENT_ID" }}'
+        client_name: 'Chronicle'
+        client_secret: '{{ secret "/config/oidc_client_secret_hash" }}'
+        public: false
+        authorization_policy: 'one_factor'
+        require_pkce: false
+        redirect_uris:
+          - 'https://{{ env "CHRONICLE_HOST" }}/api/auth/oidc/callback'
+        scopes:
+          - 'openid'
+          - 'profile'
+          - 'email'
+        userinfo_signed_response_alg: 'none'

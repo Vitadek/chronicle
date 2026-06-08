@@ -203,6 +203,26 @@ export function upsertExternalUser(args: {
     return existing.id;
   }
 
+  // Adopt-by-email: no match on (provider, issuer, external_id), but a user
+  // with this email already exists — e.g. switching auth providers, or a
+  // single-user deployment whose data lives under another id (LOCAL_USER_ID).
+  // Bind this external identity to that user instead of inserting a duplicate
+  // (which would also trip the UNIQUE email constraint).
+  if (args.email) {
+    const byEmail = db
+      .prepare('SELECT id FROM users WHERE email = ?')
+      .get(args.email) as { id: string } | undefined;
+    if (byEmail) {
+      db.prepare(
+        `UPDATE users
+            SET external_provider = ?, external_issuer = ?, external_id = ?,
+                display_name = COALESCE(?, display_name)
+          WHERE id = ?`,
+      ).run(args.provider, args.issuer, args.externalId, args.displayName ?? null, byEmail.id);
+      return byEmail.id;
+    }
+  }
+
   const id = crypto.randomBytes(12).toString('base64url');
   db.prepare(
     `INSERT INTO users

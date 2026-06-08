@@ -1,0 +1,75 @@
+# OIDC test stack: Chronicle (oidc mode) + Authelia (OIDC provider) + Caddy
+# (self-signed TLS) on chronicle.lan / auth.chronicle.lan.
+#
+#   docker compose down                              # stop the plain none-mode stack first
+#   docker compose -f docker-compose.oidc.yml up -d  # start the OIDC stack
+#
+# Shares the same data volume + `chronicle` container name as docker-compose.yml,
+# so run only one at a time. Browser on this host: chronicle.lan resolves
+# to 127.0.0.1 automatically; accept the self-signed cert warning.
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: chronicle-caddy
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    environment:
+      - CHRONICLE_HOST=${CHRONICLE_HOST}
+      - AUTH_HOST=${AUTH_HOST}
+    volumes:
+      - ./Caddyfile.oidc:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    networks:
+      chronicle-net:
+        # So the chronicle container resolves these names to Caddy for the
+        # server-side OIDC token exchange.
+        aliases:
+          - ${CHRONICLE_HOST}
+          - ${AUTH_HOST}
+
+  authelia:
+    image: authelia/authelia:4.38
+    container_name: chronicle-authelia
+    restart: unless-stopped
+    user: "1000:1000"
+    environment:
+      - X_AUTHELIA_CONFIG_FILTERS=template
+      - CHRONICLE_HOST=${CHRONICLE_HOST}
+      - AUTH_HOST=${AUTH_HOST}
+      - AUTH_OIDC_CLIENT_ID=${AUTH_OIDC_CLIENT_ID}
+      - AUTHELIA_SESSION_SECRET=${AUTHELIA_SESSION_SECRET}
+      - AUTHELIA_STORAGE_ENCRYPTION_KEY=${AUTHELIA_STORAGE_ENCRYPTION_KEY}
+      - AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET=${AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET}
+      - AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET=${AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET}
+    volumes:
+      - ./authelia-oidc:/config
+    networks:
+      - chronicle-net
+
+  chronicle:
+    build: .
+    image: chronicle:latest
+    container_name: chronicle
+    restart: unless-stopped
+    volumes:
+      - chronicle-data:/data
+    environment:
+      - AUTH_MODE=oidc
+      - AUTH_OIDC_ISSUER_URL=https://${AUTH_HOST}
+      - AUTH_OIDC_CLIENT_ID=${AUTH_OIDC_CLIENT_ID}
+      - AUTH_OIDC_CLIENT_SECRET=${AUTH_OIDC_CLIENT_SECRET}
+      - AUTH_OIDC_REDIRECT_URI=https://${CHRONICLE_HOST}/api/auth/oidc/callback
+      # Trust the self-signed cert when the server calls Authelia's token
+      # endpoint (testbed). Set to 1 (or drop) once you have real certs on prod.
+      - NODE_TLS_REJECT_UNAUTHORIZED=${NODE_TLS_REJECT_UNAUTHORIZED:-0}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    networks:
+      - chronicle-net
+
+networks:
+  chronicle-net:
+
+volumes:
+  chronicle-data:
+  caddy-data:

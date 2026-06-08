@@ -1,0 +1,15 @@
+# OIDC test stack TLS front (self-signed via Caddy's internal CA).
+# No forward_auth here — OIDC is app-driven, not proxy-gated.
+{
+	admin off
+}
+
+{$CHRONICLE_HOST} {
+	reverse_proxy chronicle:3000
+	tls internal
+}
+
+{$AUTH_HOST} {
+	reverse_proxy authelia:9091
+	tls internal
+}
