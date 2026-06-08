@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { EditorContent, ReactRenderer } from '@tiptap/react';
 import { useChronicleEditor, UseChronicleEditorProps } from '../hooks/useChronicleEditor';
 import { SmartThesaurus } from './SmartThesaurus';
+import { CollabEditor } from './CollabEditor';
 import { CommandPortal } from './CommandPortal';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -20,10 +21,19 @@ interface EditorViewProps {
   isDarkMode: boolean;
   onToggleTheme: () => void;
   manuscriptId: string;
+  /** Current chapter id, used to key the collaborative Y.Doc. */
+  chapterId?: string;
   isTitlePage?: boolean;
   /** Cover image filename to display at the top of the title page. */
   coverArt?: string;
   isAutocompleteEnabled?: boolean;
+  /** Live tense-shift squiggles in the body editor (lib/TenseShift.ts). */
+  isTenseCheckEnabled?: boolean;
+  /** Live grammar/style squiggles in the body editor (lib/Grammar.ts, Harper). */
+  isGrammarCheckEnabled?: boolean;
+  /** Forwarded up to the Issues panel after each checker recompute. */
+  onTenseShifts?: (hits: import('../lib/TenseShift').TenseShiftHit[]) => void;
+  onGrammarMarks?: (marks: import('../lib/Grammar').GrammarMark[]) => void;
   isThesaurusEnabled?: boolean;
   isZenModeEnabled?: boolean;
   /** Whether body paragraphs render with a first-line indent. SMF default. */
@@ -62,9 +72,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
   isDarkMode, 
   onToggleTheme, 
   manuscriptId,
+  chapterId,
   isTitlePage,
   coverArt,
   isAutocompleteEnabled,
+  isTenseCheckEnabled = false,
+  isGrammarCheckEnabled = false,
+  onTenseShifts,
+  onGrammarMarks,
   isThesaurusEnabled,
   isZenModeEnabled,
   isFirstLineIndentEnabled = true,
@@ -534,6 +549,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     placeholder: isTitlePage ? 'Manuscript Title' : 'Chapter Title',
     className: cn('novel-title-editor focus:outline-none mb-12', isTitlePage && 'text-center text-4xl sm:text-6xl'),
     isAutocompleteEnabled,
+    isTouchUI,
     onUpdate: (html) => {
       const text = html.replace(/<[^>]*>?/gm, '').trim();
       onUpdate(text, content);
@@ -546,6 +562,11 @@ export const EditorView: React.FC<EditorViewProps> = ({
     placeholder: isTitlePage ? 'Author Name' : 'Once upon a time in...',
     className: cn('novel-editor-content focus:outline-none', !isTitlePage && 'min-h-[500px]', isTitlePage && 'text-center text-2xl'),
     isAutocompleteEnabled,
+    isTenseCheckEnabled: isTenseCheckEnabled && !isTitlePage,
+    isGrammarCheckEnabled: isGrammarCheckEnabled && !isTitlePage,
+    onTenseShifts,
+    onGrammarMarks,
+    isTouchUI,
     commandLineOptions,
     onUpdate: (html) => {
       onUpdate(title, isTitlePage ? html.replace(/<[^>]*>?/gm, '').trim() : html);
@@ -676,6 +697,22 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   const isZenActive = isZenModeEnabled && isZenTriggered;
 
+  // Opt-in real-time collaboration (Phase 2): set localStorage chronicle_collab
+  // to '1' and reload. Connects to the server's /collab endpoint and keys the
+  // shared Y.Doc by manuscript + chapter. Title page is excluded for now.
+  const collabEnabled =
+    typeof window !== 'undefined' &&
+    localStorage.getItem('chronicle_collab') === '1' &&
+    !isTitlePage;
+  const collabUrl =
+    typeof window !== 'undefined'
+      ? `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/collab`
+      : '';
+  const collabDocName = `${manuscriptId}:${chapterId || 'content'}`;
+  // Bearer token (oidc/token mode) so the secured collab socket authenticates.
+  const collabToken =
+    typeof window !== 'undefined' ? localStorage.getItem('chronicle_token') ?? undefined : undefined;
+
   useEffect(() => {
     if (isZenActive) {
       document.body.classList.add('zen-active');
@@ -758,11 +795,20 @@ export const EditorView: React.FC<EditorViewProps> = ({
             <div className="my-12 opacity-20 font-serif italic text-xl text-center">by</div>
           )}
           <div data-outline="content">
-            <EditorContent 
-              editor={editor} 
-              className="w-full"
-            />
-            {(isThesaurusEnabled || (isAiBubbleMenuEnabled && isAiEnabled)) && (
+            {collabEnabled ? (
+              <CollabEditor
+                docName={collabDocName}
+                collabUrl={collabUrl}
+                token={collabToken}
+                className="w-full"
+              />
+            ) : (
+              <EditorContent
+                editor={editor}
+                className="w-full"
+              />
+            )}
+            {!collabEnabled && (isThesaurusEnabled || (isAiBubbleMenuEnabled && isAiEnabled)) && (
               <SmartThesaurus
                 editor={editor}
                 isDarkMode={isDarkMode}
@@ -776,7 +822,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
             )}
 
             {/* Plugin Layer */}
-            {editor && !isTitlePage && (
+            {!collabEnabled && editor && !isTitlePage && (
               <ActivePluginHost editor={editor} manuscriptId={manuscriptId} aiConfig={aiConfig} />
             )}
 

@@ -1,5 +1,5 @@
-import React, { useState, useRef, useMemo } from 'react';
-import { Book, Plus, MoreVertical, Menu, X, Trash2, Settings, ChevronLeft, Moon, Sun, Cloud, Layout, Copy, GripVertical, FileText, List, Search, Upload, Check, Download, Briefcase, User, Info, Library, Sparkles, AlignLeft, Bot, Smartphone } from 'lucide-react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { Book, Plus, MoreVertical, Menu, X, Trash2, Settings, ChevronLeft, Moon, Sun, Cloud, Layout, Copy, GripVertical, FileText, List, Search, Upload, Check, Download, Briefcase, User, Info, Library, Sparkles, AlignLeft, Bot, Smartphone, Clock, SpellCheck } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { Chapter, ManuscriptMetadata, UserProfile } from '../types';
@@ -11,6 +11,9 @@ import { CoverArtUpload } from './CoverArtUpload';
 import { AiSettingsPanel } from './AiSettingsPanel';
 import { ChapterMenu } from './ChapterMenu';
 import { OutlinePane } from './OutlinePane';
+import { IssuesPane } from './IssuesPane';
+import type { TenseShiftHit } from '../lib/TenseShift';
+import type { GrammarMark } from '../lib/Grammar';
 import type { Editor } from '@tiptap/react';
 import type { Character, PlotNode, PlotEdge } from '../types';
 import type { AiConfig, AiProvider } from '../services/aiConfig';
@@ -47,6 +50,14 @@ interface SidebarProps {
   onReorderChapters: (chapters: Chapter[]) => void;
   isAutocompleteEnabled: boolean;
   onToggleAutocomplete: () => void;
+  isTenseCheckEnabled: boolean;
+  onToggleTenseCheck: () => void;
+  isGrammarCheckEnabled: boolean;
+  onToggleGrammarCheck: () => void;
+  isIssuesPanelEnabled: boolean;
+  onToggleIssuesPanel: () => void;
+  tenseHits: TenseShiftHit[];
+  grammarMarks: GrammarMark[];
   isThesaurusEnabled: boolean;
   onToggleThesaurus: () => void;
   isZenModeEnabled: boolean;
@@ -239,6 +250,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onReorderChapters,
   isAutocompleteEnabled,
   onToggleAutocomplete,
+  isTenseCheckEnabled,
+  onToggleTenseCheck,
+  isGrammarCheckEnabled,
+  onToggleGrammarCheck,
+  isIssuesPanelEnabled,
+  onToggleIssuesPanel,
+  tenseHits,
+  grammarMarks,
   isThesaurusEnabled,
   onToggleThesaurus,
   isZenModeEnabled,
@@ -281,7 +300,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeletePlotEdge,
   className 
 }) => {
-  const [view, setView] = useState<'chapters' | 'outline' | 'settings' | 'export' | 'profile'>('chapters');
+  const [view, setView] = useState<'chapters' | 'outline' | 'issues' | 'settings' | 'export' | 'profile'>('chapters');
+
+  // If the Issues panel is switched off while it's the active tab, fall back.
+  useEffect(() => {
+    if (!isIssuesPanelEnabled && view === 'issues') setView('chapters');
+  }, [isIssuesPanelEnabled, view]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<'docx' | 'md' | 'html' | 'epub' | null>(null);
   const [confirmDeleteManuscript, setConfirmDeleteManuscript] = useState(false);
@@ -595,7 +619,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <List className="w-3 h-3" />
                 Outline
               </button>
-              <button 
+              {isIssuesPanelEnabled && (
+                <button
+                  onClick={() => setView('issues')}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
+                    view === 'issues' ? (isDarkMode ? "bg-white/10 text-white" : "bg-white text-black shadow-sm") : "opacity-40"
+                  )}
+                >
+                  <SpellCheck className="w-3 h-3" />
+                  Issues
+                </button>
+              )}
+              <button
                 onClick={() => setView('export')}
                 className={cn(
                   "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
@@ -714,6 +750,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     chapters={chapters}
                     currentChapterId={currentChapterId}
                     onSelectChapter={onSelectChapter}
+                  />
+                </motion.div>
+              ) : view === 'issues' ? (
+                <motion.div
+                  key="issues"
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.98 }}
+                  className="flex flex-col flex-1 min-h-0 overflow-hidden"
+                >
+                  <IssuesPane
+                    isDarkMode={isDarkMode}
+                    editor={editor || null}
+                    tenseHits={tenseHits}
+                    grammarMarks={grammarMarks}
+                    tenseEnabled={isTenseCheckEnabled}
+                    grammarEnabled={isGrammarCheckEnabled}
                   />
                 </motion.div>
               ) : view === 'export' ? (
@@ -1137,7 +1190,70 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           </div>
                         </button>
 
-                        <button 
+                        <button
+                          onClick={onToggleTenseCheck}
+                          className="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all text-sm group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Clock className="w-4 h-4" />
+                            <span className={cn("font-medium", isDarkMode ? "text-white/80" : "text-black/80")}>
+                              Tense Check
+                            </span>
+                          </div>
+                          <div className={cn(
+                            "w-8 h-4 rounded-full relative transition-colors duration-300",
+                            isTenseCheckEnabled ? "bg-white/20" : "bg-black/10"
+                          )}>
+                            <div className={cn(
+                              "absolute top-1 w-2 h-2 rounded-full transition-all duration-300",
+                              isTenseCheckEnabled ? "bg-white left-5" : "bg-black left-1"
+                            )} />
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={onToggleGrammarCheck}
+                          className="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all text-sm group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <SpellCheck className="w-4 h-4" />
+                            <span className={cn("font-medium", isDarkMode ? "text-white/80" : "text-black/80")}>
+                              Grammar Check
+                            </span>
+                          </div>
+                          <div className={cn(
+                            "w-8 h-4 rounded-full relative transition-colors duration-300",
+                            isGrammarCheckEnabled ? "bg-white/20" : "bg-black/10"
+                          )}>
+                            <div className={cn(
+                              "absolute top-1 w-2 h-2 rounded-full transition-all duration-300",
+                              isGrammarCheckEnabled ? "bg-white left-5" : "bg-black left-1"
+                            )} />
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={onToggleIssuesPanel}
+                          className="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all text-sm group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <List className="w-4 h-4" />
+                            <span className={cn("font-medium", isDarkMode ? "text-white/80" : "text-black/80")}>
+                              Issues Panel
+                            </span>
+                          </div>
+                          <div className={cn(
+                            "w-8 h-4 rounded-full relative transition-colors duration-300",
+                            isIssuesPanelEnabled ? "bg-white/20" : "bg-black/10"
+                          )}>
+                            <div className={cn(
+                              "absolute top-1 w-2 h-2 rounded-full transition-all duration-300",
+                              isIssuesPanelEnabled ? "bg-white left-5" : "bg-black left-1"
+                            )} />
+                          </div>
+                        </button>
+
+                        <button
                           onClick={onToggleThesaurus}
                           className="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all text-sm group"
                         >

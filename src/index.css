@@ -17,6 +17,13 @@
   body {
     @apply transition-colors duration-500 font-sans antialiased bg-manuscript-light text-[#2C2A24] dark:bg-manuscript-dark dark:text-[#F1EDE4];
   }
+  /* App-like overscroll. Chronicle is an installable PWA, so the page-level
+     pull-to-refresh and rubber-band glow on Android are unwanted — an
+     accidental over-pull while scrolling a long chapter shouldn't bounce or
+     reload the surface. Scrolling itself is unaffected. */
+  html {
+    overscroll-behavior-y: none;
+  }
 }
 
 .novel-editor .ProseMirror {
@@ -26,6 +33,9 @@
      force a strong color and slightly thicken the line so the insertion
      point is always obvious. */
   caret-color: #1A1A1A;
+  /* Suppress the grey/blue tap-flash Android paints over the editor every
+     time you tap to place the caret — it reads as a flicker while writing. */
+  -webkit-tap-highlight-color: transparent;
 }
 .dark .novel-editor .ProseMirror {
   caret-color: #F1EDE4;
@@ -117,6 +127,8 @@
   @apply opacity-30 italic pointer-events-none;
   color: currentColor;
 }
+/* Checker squiggles (.tense-shift / .grammar-lint) live in styles/checkers.css,
+   imported from src/main.tsx so they're shared with the mobile editor bundle. */
 
 .novel-editor .ProseMirror h2 {
   @apply text-xl font-manuscript font-semibold mb-8 tracking-tight text-center;

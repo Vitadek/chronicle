@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { EditorView } from './components/EditorView';
+import type { TenseShiftHit } from './lib/TenseShift';
+import type { GrammarMark } from './lib/Grammar';
 import { LibraryView } from './components/LibraryView';
 import { GlobalSettings } from './components/GlobalSettings';
 import { PluginProvider } from './plugins/PluginManager';
@@ -43,6 +45,17 @@ export default function App() {
   const [isAutocompleteEnabled, setIsAutocompleteEnabled] = useState(() => {
     return localStorage.getItem('chronicle_autocomplete') !== 'false';
   });
+  const [isTenseCheckEnabled, setIsTenseCheckEnabled] = useState(() => {
+    return localStorage.getItem('chronicle_tense_check') === 'true';
+  });
+  const [isGrammarCheckEnabled, setIsGrammarCheckEnabled] = useState(() => {
+    return localStorage.getItem('chronicle_grammar_check') === 'true';
+  });
+  const [isIssuesPanelEnabled, setIsIssuesPanelEnabled] = useState(() => {
+    return localStorage.getItem('chronicle_issues_panel') === 'true';
+  });
+  const [tenseHits, setTenseHits] = useState<TenseShiftHit[]>([]);
+  const [grammarMarks, setGrammarMarks] = useState<GrammarMark[]>([]);
   const [isThesaurusEnabled, setIsThesaurusEnabled] = useState(() => {
     return localStorage.getItem('chronicle_thesaurus') !== 'false';
   });
@@ -290,6 +303,24 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('chronicle_autocomplete', isAutocompleteEnabled.toString());
   }, [isAutocompleteEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('chronicle_tense_check', isTenseCheckEnabled.toString());
+  }, [isTenseCheckEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('chronicle_grammar_check', isGrammarCheckEnabled.toString());
+  }, [isGrammarCheckEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('chronicle_issues_panel', isIssuesPanelEnabled.toString());
+  }, [isIssuesPanelEnabled]);
+
+  // Findings are position-keyed to the open chapter's editor; clear on switch.
+  useEffect(() => {
+    setTenseHits([]);
+    setGrammarMarks([]);
+  }, [currentChapterId, currentManuscriptId]);
 
   useEffect(() => {
     localStorage.setItem('chronicle_thesaurus', isThesaurusEnabled.toString());
@@ -649,6 +680,14 @@ export default function App() {
           currentChapterContent={currentChapter.content}
           isAutocompleteEnabled={isAutocompleteEnabled}
           onToggleAutocomplete={() => setIsAutocompleteEnabled(!isAutocompleteEnabled)}
+          isTenseCheckEnabled={isTenseCheckEnabled}
+          onToggleTenseCheck={() => setIsTenseCheckEnabled(!isTenseCheckEnabled)}
+          isGrammarCheckEnabled={isGrammarCheckEnabled}
+          onToggleGrammarCheck={() => setIsGrammarCheckEnabled(!isGrammarCheckEnabled)}
+          isIssuesPanelEnabled={isIssuesPanelEnabled}
+          onToggleIssuesPanel={() => setIsIssuesPanelEnabled(!isIssuesPanelEnabled)}
+          tenseHits={tenseHits}
+          grammarMarks={grammarMarks}
           onUpdateMetadata={(newMetadata) => setMetadata(prev => prev ? ({ ...prev, ...newMetadata }) : null)}
           userProfile={userProfile}
           onUpdateUserProfile={(newUserProfile) => setUserProfile(prev => ({ ...prev, ...newUserProfile }))}
@@ -687,11 +726,16 @@ export default function App() {
               isDarkMode={isDarkMode} 
               onToggleTheme={() => setIsDarkMode(!isDarkMode)} 
               manuscriptId={currentManuscriptId!}
+              chapterId={currentChapter.id}
               isTitlePage={isTitlePage}
               coverArt={metadata.coverArt}
               isSidebarOpen={isSidebarOpen}              isThesaurusEnabled={isThesaurusEnabled}
               isZenModeEnabled={isZenModeEnabled}
               isAutocompleteEnabled={isAutocompleteEnabled}
+              isTenseCheckEnabled={isTenseCheckEnabled}
+              isGrammarCheckEnabled={isGrammarCheckEnabled}
+              onTenseShifts={setTenseHits}
+              onGrammarMarks={setGrammarMarks}
               isFirstLineIndentEnabled={isFirstLineIndentEnabled}
               isAiEnabled={isAiEnabled && !!aiConfig}
               isAiBubbleMenuEnabled={isAiBubbleMenuEnabled}

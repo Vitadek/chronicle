@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { PluginContext } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
-import { getAiResponse } from '../../services/aiService';
+import { getAiResponse, extractAiText } from '../../services/aiService';
 
 type ChibiMood = 'IDLE' | 'WRITING' | 'THINKING' | 'HAPPY' | 'TALKING' | 'ALERT' | 'TIRED';
 
@@ -46,7 +46,7 @@ export const ChibiCompanion: React.FC<PluginContext> = ({
       setMood('ALERT');
       setTimeout(() => setComment(null), 3000);
     } else if (dialogueDensity > 0.5 && mood === 'IDLE') {
-      setMood('TALKING'); // Lean in animation
+      setMood('TALKING');
       setTimeout(() => setMood('IDLE'), 5000);
     }
   }, [editor, mood]);
@@ -59,26 +59,22 @@ export const ChibiCompanion: React.FC<PluginContext> = ({
     setComment("Let me read this real quick...");
 
     try {
-      // Use the new contextLimit from settings (default to 10k chars if missing)
       const limit = aiConfig.contextLimit || 10000;
       const fullText = editor.getText();
       const sample = fullText.slice(-limit); 
 
-      const prompt = `You are a blunt but observant JRPG companion named ${state.petName || 'ChronicleBot'}. 
-      Read the following story excerpt and give one honest, short sentence about what you think. 
-      Don't be a generic assistant; be a reader. If it's exciting, say so. If it's slow, mention that. 
-      Keep it under 15 words.
+      const prompt = `You are an encouraging and observant JRPG companion named ${state.petName || 'ChronicleBot'}. 
+      Read the following story excerpt. Give one short, supportive sentence of feedback. 
+      Mention one specific detail, character, or event you liked from the text to prove you read it.
+      Keep it under 20 words.
       
       EXCERPT:
       ${sample}`;
 
       const response = await getAiResponse(prompt, aiConfig);
 
-      // Extract text from response (using same logic as EditorView)
-      let bodyText = "";
-      if (typeof response === 'string') bodyText = response;
-      else if (Array.isArray(response.choices)) bodyText = response.choices[0]?.message?.content || "";
-      else if (response.output?.[1]?.content?.[0]?.text) bodyText = response.output[1].content[0].text;
+      // Extract text using the shared helper
+      const bodyText = extractAiText(response);
 
       setComment(bodyText || "I've got nothing to say right now.");
       setMood('TALKING');
@@ -101,7 +97,7 @@ export const ChibiCompanion: React.FC<PluginContext> = ({
   useEffect(() => {
     const handleTransaction = () => {
       const currentPos = editor.state.selection.from;
-      if (currentPos !== lastPos.current) {
+      if (Math.abs(currentPos - lastPos.current) > 5) {
         if (mood !== 'WRITING' && mood !== 'HAPPY' && mood !== 'THINKING' && mood !== 'TALKING' && mood !== 'ALERT') {
           setMood('WRITING');
         }
@@ -111,7 +107,7 @@ export const ChibiCompanion: React.FC<PluginContext> = ({
         velocityTimer.current = setTimeout(() => {
           if (mood === 'WRITING') {
             setMood('IDLE');
-            runLocalHeuristics(); // Check mood after writing session
+            runLocalHeuristics();
           }
         }, 3000);
       }
@@ -146,34 +142,32 @@ export const ChibiCompanion: React.FC<PluginContext> = ({
           from { background-position: 0px; }
           to { background-position: -1152px; }
         }
-        @keyframes chibi-writing {
+        @keyframes chibi-attack {
           from { background-position: 0px; }
-          to { background-position: -640px; }
+          to { background-position: -1024px; }
         }
         @keyframes chibi-talking {
           from { background-position: 0px; }
           to { background-position: -1408px; }
         }
-        @keyframes chibi-jump {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-20px); }
+        @keyframes book-spin {
+          from { background-position: 0px; }
+          to { background-position: -640px; }
         }
         .chibi-sprite {
           width: 128px;
           height: 128px;
           image-rendering: pixelated;
           background-size: auto 128px;
+          background-repeat: no-repeat;
         }
         .chibi-idle {
           background-image: url('/plugins/chibi/Idle.png');
           animation: chibi-idle 1.2s steps(9) infinite;
         }
         .chibi-writing {
-          background-image: url('/plugins/chibi/Book.png');
-          animation: chibi-writing 0.8s steps(10) infinite;
-          width: 64px;
-          height: 64px;
-          background-size: auto 64px;
+          background-image: url('/plugins/chibi/Attack.png');
+          animation: chibi-attack 0.6s steps(8) infinite;
         }
         .chibi-talking {
           background-image: url('/plugins/chibi/Dialogue.png');
@@ -189,9 +183,20 @@ export const ChibiCompanion: React.FC<PluginContext> = ({
           animation: chibi-idle 3s steps(9) infinite;
           opacity: 0.6;
         }
+        .writing-accessory {
+          position: absolute;
+          bottom: 10px;
+          right: -10px;
+          width: 64px;
+          height: 64px;
+          background-image: url('/plugins/chibi/Book.png');
+          animation: book-spin 0.8s steps(10) infinite;
+          background-size: auto 64px;
+          image-rendering: pixelated;
+          z-index: 20;
+        }
       `}</style>
 
-      {/* Speech/Thought bubble container */}
       <AnimatePresence>
         {(mood === 'THINKING' || mood === 'HAPPY' || mood === 'WRITING' || mood === 'ALERT' || comment) && (
           <motion.div 
@@ -212,15 +217,13 @@ export const ChibiCompanion: React.FC<PluginContext> = ({
         )}
       </AnimatePresence>
 
-      {/* Render Frame with Spritesheet */}
       <motion.div
         animate={{
           y: mood === 'WRITING' ? [0, -4, 0] : [0, -2, 0],
           scale: mood === 'HAPPY' ? [1, 1.1, 1] : 1,
         }}
         className={cn(
-          "flex items-center justify-center pointer-events-auto cursor-pointer select-none group relative",
-          mood === 'WRITING' ? "w-16 h-16" : "w-32 h-32"
+          "flex items-center justify-center pointer-events-auto cursor-pointer select-none group relative w-32 h-32"
         )}
         onClick={() => {
           if (mood === 'IDLE' || mood === 'TIRED') askForFeedback();
@@ -240,8 +243,11 @@ export const ChibiCompanion: React.FC<PluginContext> = ({
           mood === 'ALERT' && "chibi-alert",
           mood === 'TIRED' && "chibi-tired"
         )} />
+        
+        {mood === 'WRITING' && (
+          <div className="writing-accessory" />
+        )}
 
-        {/* Interaction Badge */}
         {state.totalInteractions > 0 && mood !== 'WRITING' && (
           <div className="absolute top-4 right-4 bg-amber-500 text-[9px] font-black text-black px-1.5 py-0.5 rounded-full shadow-lg border border-black/20 z-20">
             Lv.{Math.floor(state.totalInteractions / 10) + 1}

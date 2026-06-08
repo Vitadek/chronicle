@@ -1,5 +1,7 @@
 import express from 'express';
+import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { config, validateConfig } from './config';
 import { authMiddleware } from './auth';
@@ -13,6 +15,7 @@ import authRouter from './routes/auth';
 import coversRouter from './routes/covers';
 import pluginsRouter from './routes/plugins';
 import pluginsExternalRouter from './routes/plugins-external';
+import { attachCollab } from './collab';
 
 async function start() {
   validateConfig();
@@ -33,6 +36,21 @@ async function start() {
   // Used by Docker/k8s probes. Keep this above auth.
   app.get('/healthz', (_req, res) => {
     res.json({ ok: true, time: Date.now() });
+  });
+
+  // -------- Harper grammar WASM (public, non-secret static asset) --------
+  // The mobile editor bundle keeps Harper's 18 MB binary OUT of the APK and
+  // fetches it from here on demand (chronicleEditor.setGrammarWasmUrl). Served
+  // before auth so the in-WebView fetch needs no bearer.
+  app.get('/assets/harper/harper_wasm_bg.wasm', (_req, res) => {
+    const wasm = path.join(process.cwd(), 'node_modules/harper.js/dist/harper_wasm_bg.wasm');
+    if (!fs.existsSync(wasm)) {
+      res.status(404).json({ error: 'harper wasm not found' });
+      return;
+    }
+    res.type('application/wasm');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.sendFile(wasm);
   });
 
   // -------- Auth bootstrap completion page --------
@@ -88,10 +106,13 @@ async function start() {
     app.use(vite.middlewares);
   }
 
-  app.listen(config.port, config.host, () => {
+  const httpServer = http.createServer(app);
+  attachCollab(httpServer);
+  httpServer.listen(config.port, config.host, () => {
     console.log(`Chronicle server listening on http://${config.host}:${config.port}`);
     console.log(`  data dir: ${config.dataDir}`);
     console.log(`  auth mode: ${config.auth.mode}`);
+    console.log(`  collab: ws ${config.host}:${config.port}/collab`);
     if (config.auth.mode === 'forward') {
       console.log(`  forward trusted proxies: ${config.auth.forward.trustedProxies}`);
       console.log(`  forward user header: ${config.auth.forward.headerUser}`);
