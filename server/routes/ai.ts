@@ -246,7 +246,7 @@ router.post('/grammar', async (req, res) => {
     res.status(503).json({ error: { message: 'Gemini key not configured (GEMINI_API_KEY).' } });
     return;
   }
-  const model = process.env.GRAMMAR_AI_MODEL || 'gemini-2.0-flash';
+  const model = process.env.GRAMMAR_AI_MODEL || 'gemini-2.5-flash';
   const system = [
     'You are a meticulous copy editor for prose fiction.',
     'Find only GENUINE grammatical or usage errors: subject–verb disagreement, wrong verb tense,',
