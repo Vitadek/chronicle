@@ -74,6 +74,26 @@ class ChronicleApi {
     return Manuscript.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
   }
 
+  /// On-demand AI grammar pass. Returns a list of {quote, message, suggestion}.
+  Future<List<Map<String, dynamic>>> aiGrammarPass(String text) async {
+    final res = await http.post(
+      _u('/api/ai/grammar'),
+      headers: _headers,
+      body: jsonEncode({'text': text}),
+    );
+    if (res.statusCode != 200) {
+      String msg = 'AI grammar pass failed (${res.statusCode}).';
+      try {
+        final j = jsonDecode(res.body) as Map<String, dynamic>;
+        msg = (j['error']?['message'] ?? msg) as String;
+      } catch (_) {}
+      throw ApiException(msg);
+    }
+    final j = jsonDecode(res.body) as Map<String, dynamic>;
+    final issues = (j['issues'] as List?) ?? [];
+    return issues.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
   Future<void> update(Manuscript m) async {
     final res = await http.put(
       _u('/api/manuscripts/${m.id}'),

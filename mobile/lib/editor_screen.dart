@@ -34,6 +34,7 @@ class _EditorScreenState extends State<EditorScreen> {
   CollabRelay? _relay;
   bool _ready = false;
   bool _saving = false;
+  bool _aiBusy = false;
   bool _tenseCheck = false;
   bool _grammarCheck = false;
 
@@ -123,6 +124,79 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
+  /// On-demand AI grammar pass (the structural check rule engines can't do).
+  /// Pulls the editor text, sends it to the server, and lists what comes back.
+  Future<void> _runAiPass() async {
+    if (_controller == null || _aiBusy) return;
+    setState(() => _aiBusy = true);
+    try {
+      final html = await _controller!
+          .evaluateJavascript(source: "window.chronicleEditor.getContent();");
+      final text = (html is String)
+          ? html
+              .replaceAll(RegExp(r'<[^>]*>'), ' ')
+              .replaceAll(RegExp(r'&[a-z]+;'), ' ')
+              .replaceAll(RegExp(r'\s+'), ' ')
+              .trim()
+          : '';
+      if (text.isEmpty) {
+        _toast('Nothing to check yet.');
+        return;
+      }
+      final issues = await widget.api.aiGrammarPass(text);
+      if (mounted) _showAiResults(issues);
+    } on ApiException catch (e) {
+      if (mounted) _toast(e.message);
+    } finally {
+      if (mounted) setState(() => _aiBusy = false);
+    }
+  }
+
+  void _toast(String m) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
+  void _showAiResults(List<Map<String, dynamic>> issues) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.5,
+        maxChildSize: 0.9,
+        builder: (ctx, scroll) {
+          if (issues.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text('No grammar issues found.'),
+              ),
+            );
+          }
+          return ListView.separated(
+            controller: scroll,
+            itemCount: issues.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (ctx, i) {
+              final it = issues[i];
+              final sugg = it['suggestion'];
+              return ListTile(
+                leading: const Icon(Icons.auto_fix_high, color: Colors.purple),
+                title: Text('“${it['quote'] ?? ''}”',
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text(
+                  [it['message'], if (sugg != null) '→ $sugg']
+                      .whereType<String>()
+                      .join('  '),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -140,6 +214,20 @@ class _EditorScreenState extends State<EditorScreen> {
             overflow: TextOverflow.ellipsis,
           ),
           actions: [
+            _aiBusy
+                ? const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.auto_fix_high),
+                    tooltip: 'AI grammar pass',
+                    onPressed: _runAiPass,
+                  ),
             PopupMenuButton<String>(
               icon: const Icon(Icons.spellcheck),
               tooltip: 'Writing aids',

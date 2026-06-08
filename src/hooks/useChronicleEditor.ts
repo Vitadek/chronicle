@@ -6,6 +6,7 @@ import { Autocomplete } from '../lib/Autocomplete';
 import { CommandLine } from '../lib/CommandLine';
 import { TenseShift, type TenseShiftHit } from '../lib/TenseShift';
 import { Grammar, type GrammarMark } from '../lib/Grammar';
+import { AiGrammar } from '../lib/AiGrammar';
 import { buildCoreExtensions, EDITOR_KEYBOARD_ATTRS } from '../lib/editorExtensions';
 
 export interface UseChronicleEditorProps {
@@ -68,6 +69,7 @@ export function useChronicleEditor({
       enabled: false, // toggled at runtime via the effect below
       onMarks: (marks) => onGrammarMarksRef.current?.(marks),
     }),
+    AiGrammar, // on-demand pass; marks set imperatively from the Issues panel
     Autocomplete,
     CommandLine.configure({
       suggestion: {

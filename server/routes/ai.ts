@@ -227,6 +227,85 @@ router.post('/respond', async (req, res) => {
   }
 });
 
+/**
+ * On-demand AI grammar pass — the structural checker the rule engines can't do
+ * (catches malformed/incomplete sentences like "There bad sentence."). Uses
+ * Gemini with a fiction-aware prompt so it doesn't nag about deliberate frag-
+ * ments, and structured JSON output: [{quote, message, suggestion}].
+ */
+const GrammarAiBody = z.object({ text: z.string().min(1).max(20000) });
+
+router.post('/grammar', async (req, res) => {
+  const parsed = GrammarAiBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: { message: 'text required' } });
+    return;
+  }
+  const apiKey = config.geminiKey;
+  if (!apiKey) {
+    res.status(503).json({ error: { message: 'Gemini key not configured (GEMINI_API_KEY).' } });
+    return;
+  }
+  const model = process.env.GRAMMAR_AI_MODEL || 'gemini-2.0-flash';
+  const system = [
+    'You are a meticulous copy editor for prose fiction.',
+    'Find only GENUINE grammatical or usage errors: subject–verb disagreement, wrong verb tense,',
+    'pronoun case, missing/doubled words, malformed or incomplete sentences (a clause with no verb),',
+    'run-ons, and clearly wrong word choice (their/there, your/you’re).',
+    'DO NOT flag stylistic choices: deliberate sentence fragments for effect, dialogue voice,',
+    'informal usage inside dialogue, comma style, or anything a literary author would defend.',
+    'When unsure, do not flag. Quote the smallest exact substring of the text that contains the error.',
+  ].join(' ');
+  const responseSchema = {
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: {
+        quote: { type: 'string' },
+        message: { type: 'string' },
+        suggestion: { type: 'string' },
+      },
+      required: ['quote', 'message'],
+    },
+  };
+  try {
+    const gBody = {
+      contents: [{ role: 'user', parts: [{ text: parsed.data.text }] }],
+      systemInstruction: { parts: [{ text: system }] },
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema,
+        maxOutputTokens: 4096,
+      },
+    };
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const upstream = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(gBody),
+    });
+    const data = await upstream.json();
+    if (!upstream.ok) {
+      res.status(upstream.status).json({ error: { message: data?.error?.message || `Gemini error ${upstream.status}` } });
+      return;
+    }
+    const raw: string = Array.isArray(data?.candidates?.[0]?.content?.parts)
+      ? data.candidates[0].content.parts.map((p: { text?: string }) => p?.text || '').join('')
+      : '';
+    let issues: { quote: string; message: string; suggestion?: string }[] = [];
+    try {
+      const j = JSON.parse(raw);
+      if (Array.isArray(j)) issues = j.filter((x) => x && typeof x.quote === 'string');
+    } catch {
+      /* model returned non-JSON; treat as no issues */
+    }
+    res.json({ issues: issues.slice(0, 100) });
+  } catch (err) {
+    console.error('AI grammar pass failed:', err);
+    res.status(500).json({ error: { message: 'AI grammar pass failed' } });
+  }
+});
+
 /** Text-to-speech. OpenAI only. */
 const TtsBody = z.object({
   model: z.string().min(1).max(120).optional(),
