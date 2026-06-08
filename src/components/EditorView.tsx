@@ -29,7 +29,7 @@ interface EditorViewProps {
   isAutocompleteEnabled?: boolean;
   /** Live tense-shift squiggles in the body editor (lib/TenseShift.ts). */
   isTenseCheckEnabled?: boolean;
-  /** Live grammar/style squiggles in the body editor (lib/Grammar.ts, Harper). */
+  /** Live grammar/style squiggles in the body editor (lib/Grammar.ts, LanguageTool). */
   isGrammarCheckEnabled?: boolean;
   /** Forwarded up to the Issues panel after each checker recompute. */
   onTenseShifts?: (hits: import('../lib/TenseShift').TenseShiftHit[]) => void;

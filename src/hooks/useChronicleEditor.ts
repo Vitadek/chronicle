@@ -24,7 +24,7 @@ export interface UseChronicleEditorProps {
   isTenseCheckEnabled?: boolean;
   /** Receives the current set of tense-shift hits after each recompute. */
   onTenseShifts?: (hits: TenseShiftHit[]) => void;
-  /** Live grammar/style squiggles via the local Harper engine (lib/Grammar.ts). */
+  /** Live grammar/style squiggles via the server LanguageTool proxy (lib/Grammar.ts). */
   isGrammarCheckEnabled?: boolean;
   /** Receives the current set of grammar marks after each recompute. */
   onGrammarMarks?: (marks: GrammarMark[]) => void;

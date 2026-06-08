@@ -1,7 +1,6 @@
 import express from 'express';
 import http from 'http';
 import path from 'path';
-import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { config, validateConfig } from './config';
 import { authMiddleware } from './auth';
@@ -16,6 +15,7 @@ import coversRouter from './routes/covers';
 import pluginsRouter from './routes/plugins';
 import pluginsExternalRouter from './routes/plugins-external';
 import { attachCollab } from './collab';
+import grammarRouter from './routes/grammar';
 
 async function start() {
   validateConfig();
@@ -36,21 +36,6 @@ async function start() {
   // Used by Docker/k8s probes. Keep this above auth.
   app.get('/healthz', (_req, res) => {
     res.json({ ok: true, time: Date.now() });
-  });
-
-  // -------- Harper grammar WASM (public, non-secret static asset) --------
-  // The mobile editor bundle keeps Harper's 18 MB binary OUT of the APK and
-  // fetches it from here on demand (chronicleEditor.setGrammarWasmUrl). Served
-  // before auth so the in-WebView fetch needs no bearer.
-  app.get('/assets/harper/harper_wasm_bg.wasm', (_req, res) => {
-    const wasm = path.join(process.cwd(), 'node_modules/harper.js/dist/harper_wasm_bg.wasm');
-    if (!fs.existsSync(wasm)) {
-      res.status(404).json({ error: 'harper wasm not found' });
-      return;
-    }
-    res.type('application/wasm');
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    res.sendFile(wasm);
   });
 
   // -------- Auth bootstrap completion page --------
@@ -92,6 +77,7 @@ async function start() {
   app.use('/api/covers', coversRouter);
   app.use('/api/plugins', pluginsRouter);
   app.use('/api/plugins-external', pluginsExternalRouter);
+  app.use('/api/grammar', grammarRouter);
 
   // Serve side-loaded plugin files statically (for frontend dynamic import)
   app.use('/plugins-raw', express.static(path.join(config.dataDir, 'plugins')));

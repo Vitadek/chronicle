@@ -64,6 +64,19 @@ services:
       # endpoint (testbed). Set to 1 (or drop) once you have real certs on prod.
       - NODE_TLS_REJECT_UNAUTHORIZED=${NODE_TLS_REJECT_UNAUTHORIZED:-0}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - LANGUAGETOOL_URL=http://languagetool:8010
+    networks:
+      - chronicle-net
+
+  # Self-hosted LanguageTool (the grammar engine LibreOffice uses). Internal
+  # only — the chronicle server proxies it at /api/grammar/check.
+  languagetool:
+    image: erikvl87/languagetool
+    container_name: chronicle-languagetool
+    restart: unless-stopped
+    environment:
+      - Java_Xms=256m
+      - Java_Xmx=768m
     networks:
       - chronicle-net
 

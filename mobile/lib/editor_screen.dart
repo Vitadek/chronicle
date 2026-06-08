@@ -39,8 +39,6 @@ class _EditorScreenState extends State<EditorScreen> {
 
   Chapter get _chapter => widget.manuscript.chapters[widget.chapterIndex];
   String get _docName => '${widget.manuscript.id}:${_chapter.id}';
-  String get _grammarWasmUrl =>
-      '${widget.api.baseUrl}/assets/harper/harper_wasm_bg.wasm';
 
   @override
   void initState() {
@@ -59,13 +57,13 @@ class _EditorScreenState extends State<EditorScreen> {
     super.dispose();
   }
 
-  /// Push the current tense/grammar toggle state into the editor bundle. Harper
-  /// fetches its WASM from the server (kept out of the APK), so we hand it the
-  /// URL before enabling the grammar checker.
+  /// Push the current tense/grammar toggle state into the editor bundle. Grammar
+  /// runs server-side (LanguageTool proxy), so we hand the bundle the server base
+  /// URL + auth token before enabling the grammar checker.
   Future<void> _applyChecks() async {
     await _controller?.evaluateJavascript(
       source:
-          "window.chronicleEditor.setGrammarWasmUrl(${jsonEncode(_grammarWasmUrl)});",
+          "window.chronicleEditor.setGrammarEndpoint(${jsonEncode(widget.api.baseUrl)}, ${jsonEncode(widget.api.token)});",
     );
     await _controller?.evaluateJavascript(
       source: "window.chronicleEditor.setTenseCheck($_tenseCheck);",
@@ -169,10 +167,10 @@ class _EditorScreenState extends State<EditorScreen> {
                   final next = !_grammarCheck;
                   setState(() => _grammarCheck = next);
                   await Settings.setGrammarCheck(next);
-                  // (Re)point Harper at the server WASM before enabling.
+                  // (Re)point grammar at the server proxy before enabling.
                   await _controller?.evaluateJavascript(
                     source:
-                        "window.chronicleEditor.setGrammarWasmUrl(${jsonEncode(_grammarWasmUrl)});",
+                        "window.chronicleEditor.setGrammarEndpoint(${jsonEncode(widget.api.baseUrl)}, ${jsonEncode(widget.api.token)});",
                   );
                   await _controller?.evaluateJavascript(
                     source: "window.chronicleEditor.setGrammarCheck($next);",

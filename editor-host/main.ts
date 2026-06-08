@@ -4,7 +4,7 @@ import * as Y from 'yjs';
 import { buildCoreExtensions, EDITOR_KEYBOARD_ATTRS } from '../src/lib/editorExtensions';
 import { TenseShift } from '../src/lib/TenseShift';
 import { Grammar } from '../src/lib/Grammar';
-import { setGrammarWasmUrl } from '../src/lib/grammar/harper';
+import { setGrammarEndpoint } from '../src/lib/grammar/languagetool';
 import './editor.css';
 import '../src/styles/checkers.css';
 
@@ -166,12 +166,12 @@ let ydoc: Y.Doc | undefined;
   setTenseCheck(enabled: boolean): void {
     editor.commands.setTenseCheck(enabled);
   },
-  /** Point Harper at the server-hosted WASM (call before enabling grammar so
-   *  the 18 MB binary isn't bundled into the APK). */
-  setGrammarWasmUrl(url: string): void {
-    setGrammarWasmUrl(url);
+  /** Point grammar at the Chronicle server (LanguageTool proxy) + auth token.
+   *  Call before enabling grammar. */
+  setGrammarEndpoint(base: string, token?: string): void {
+    setGrammarEndpoint(base, token ?? null);
   },
-  /** Live grammar/style squiggles (Harper, lazy-loaded from the server WASM). */
+  /** Live grammar/style squiggles via the server's LanguageTool proxy. */
   setGrammarCheck(enabled: boolean): void {
     editor.commands.setGrammarCheck(enabled);
   },

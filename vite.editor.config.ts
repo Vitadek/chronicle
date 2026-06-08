@@ -13,12 +13,6 @@ export default defineConfig({
   root: path.resolve(__dirname, 'editor-host'),
   // Relative asset URLs so index.html works from a local file/localhost mount.
   base: './',
-  // Keep Harper's 18 MB WASM OUT of the APK: this build loads it from the
-  // Chronicle server at runtime (chronicleEditor.setGrammarWasmUrl) instead of
-  // bundling it, so the bundled-binary import path constant-folds away.
-  define: {
-    __HARPER_BUNDLED__: 'false',
-  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),

@@ -1,17 +1,17 @@
-// TipTap extension that paints Harper's grammar/style lints as inline squiggles,
-// following the same debounced async-lint idiom as lib/TenseShift.ts.
+// TipTap extension that paints LanguageTool's grammar/style lints as inline
+// squiggles, following the same debounced async-lint idiom as lib/TenseShift.ts.
 //
-// Linting is async (it crosses into a Web Worker) and the 18 MB engine loads
-// lazily, so the heavy work runs off a debounce and the result is only applied
-// if the document hasn't changed underneath it. Spelling/typo lints get a red
-// squiggle; everything else (style, repetition, agreement, ...) gets blue.
+// Linting is async (it crosses the network to the server's LanguageTool proxy),
+// so the work runs off a debounce and the result is only applied if the document
+// hasn't changed underneath it. Errors (spelling/grammar/typographical) get a
+// red squiggle; stylistic/advisory notes get blue.
 
 import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorState } from '@tiptap/pm/state';
 import { buildPosMap } from './proseMirrorText';
-import { lintText, loadGrammarEngine, type GrammarHit } from './grammar/harper';
+import { lintText, loadGrammarEngine, type GrammarHit } from './grammar/languagetool';
 
 export interface GrammarMark {
   from: number;
@@ -41,8 +41,9 @@ declare module '@tiptap/core' {
 
 const grammarKey = new PluginKey<DecorationSet>('grammar');
 
-// Spelling/typo errors read as hard errors (red); the rest are advisory (blue).
-const ERROR_KINDS = new Set(['Spelling', 'Typo', 'Capitalization', 'BoundaryError']);
+// Outright errors read red; stylistic/advisory notes read blue. LanguageTool
+// issue types: misspelling | grammar | typographical | style | uncategorized | …
+const ERROR_KINDS = new Set(['misspelling', 'grammar', 'typographical', 'whitespace']);
 function classFor(kind: string): string {
   return ERROR_KINDS.has(kind) ? 'grammar-lint grammar-error' : 'grammar-lint grammar-style';
 }
