@@ -1,6 +1,7 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
+import { AuthGate } from './components/AuthGate.tsx';
 import './index.css';
 import './styles/checkers.css';
 import { migrateLocalStorageKeys } from './lib/localStorageMigration';
@@ -10,6 +11,8 @@ migrateLocalStorageKeys();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <AuthGate>
+      <App />
+    </AuthGate>
   </StrictMode>,
 );
