@@ -1,0 +1,37 @@
+/* Squiggle styles for the local checkers (TenseShift, Grammar), shared by the
+   web client and the slim mobile editor bundle so they can't drift. Imported
+   from src/main.tsx (web) and editor-host/main.ts (mobile WebView). Dark mode
+   keys off `.dark` on the root element, which both clients set. */
+
+/* Tense-shift: a sentence whose tense drifts from its paragraph's dominant
+   tense gets a soft amber wavy underline (advisory, never blocks). */
+.tense-shift {
+  text-decoration: underline wavy rgba(217, 119, 6, 0.85);
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+.dark .tense-shift {
+  text-decoration-color: rgba(251, 191, 36, 0.85);
+}
+
+/* Grammar checker (Harper): red wavy for spelling/typo errors, blue wavy for
+   style/usage advice. Advisory only — never blocks typing. */
+.grammar-lint {
+  text-decoration: underline wavy;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+.grammar-error {
+  text-decoration-color: rgba(220, 38, 38, 0.85);
+}
+.grammar-style {
+  text-decoration-color: rgba(37, 99, 235, 0.8);
+}
+.dark .grammar-error {
+  text-decoration-color: rgba(248, 113, 113, 0.85);
+}
+.dark .grammar-style {
+  text-decoration-color: rgba(96, 165, 250, 0.8);
+}
