@@ -77,8 +77,14 @@ async function start() {
   // -------- Auth routes (mixed: /start, /callback are unauthenticated) --------
   app.use('/api/auth', authRouter);
 
-  // -------- Everything below requires auth (or no-op when disabled) --------
-  app.use(authMiddleware);
+  // -------- API requires auth (or no-op when disabled) --------
+  // Scope auth to /api ONLY. The SPA shell + its hashed assets (incl. the
+  // lazily-imported checker chunks) are static code served below and must load
+  // without a bearer — browsers don't attach Authorization to <script>/<link>/
+  // dynamic import() fetches, so a global gate 401s them and breaks the app in
+  // token/oidc mode. Data stays protected; the client authenticates its /api
+  // calls and redirects to OIDC login as needed.
+  app.use('/api', authMiddleware);
 
   app.use('/api/sync', syncRouter);
   app.use('/api/manuscripts', manuscriptsRouter);
