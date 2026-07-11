@@ -27,12 +27,6 @@ import { Chapter, ManuscriptMetadata, UserProfile, Manuscript, Character, PlotNo
 import { countWords } from './lib/wordCount';
 import type { Editor } from '@tiptap/react';
 
-const INITIAL_TITLE = "The Unwritten Path";
-const INITIAL_CONTENT = `
-  <p>Silas moved with a silence that was less a choice and more a consequence of a life spent in the margins. The forest of Oakhaven didn't welcome him, but it didn't reject him either; it simply acknowledged his presence with the stoic indifference of ancient roots and moss-covered stones.</p>
-  <p>In his hand, he carried the letter. Its edges were frayed, the parchment yellowed by time and exposure to the damp air of the salt marshes. It was the only thing he had left of the world before the Great Silence, a piece of history that felt heavier than the pack on his back.</p>
-`;
-
 export default function App() {
   const [currentManuscriptId, setCurrentManuscriptId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -454,7 +448,7 @@ export default function App() {
     const newManuscript: Manuscript = {
       metadata: {
         id,
-        title: INITIAL_TITLE,
+        title: '',
         author: userProfile.name || 'Uncredited Author',
         lastModified: Date.now(),
       },
@@ -462,7 +456,7 @@ export default function App() {
         {
           id: '1',
           title: 'Chapter 1',
-          content: INITIAL_CONTENT,
+          content: '',
           lastModified: Date.now(),
         }
       ]
