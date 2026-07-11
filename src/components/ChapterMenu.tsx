@@ -5,6 +5,9 @@ import { cn } from '../lib/utils';
 
 interface ChapterMenuProps {
   isDarkMode: boolean;
+  /** Notifies the parent row when the menu opens/closes so it can raise its
+   *  stacking order above sibling rows (the dropdown overflows onto them). */
+  onOpenChange?: (open: boolean) => void;
   onDuplicate: () => void;
   onDelete: () => void;
   onExportDocx: () => void;
@@ -22,6 +25,7 @@ interface ChapterMenuProps {
  */
 export const ChapterMenu: React.FC<ChapterMenuProps> = ({
   isDarkMode,
+  onOpenChange,
   onDuplicate,
   onDelete,
   onExportDocx,
@@ -30,6 +34,11 @@ export const ChapterMenu: React.FC<ChapterMenuProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  // Keep the parent row in sync with open/close so it can lift its z-index.
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open]);
 
   // Outside-click + Escape both close the menu. Without this the menu would
   // stay open after the user clicked away, which collides with the rest of

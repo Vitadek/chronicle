@@ -155,10 +155,16 @@ const SortableChapter: React.FC<SortableChapterProps> = ({
     isDragging,
   } = useSortable({ id: chapter.id });
 
+  // When the row's action menu is open, lift the whole row above its siblings.
+  // Each row is its own stacking context (dnd-kit transform + z-index), so the
+  // menu's own z-index can't escape the row — the row itself must outrank the
+  // rows below it, or the next chapter paints over the open dropdown.
+  const [menuOpen, setMenuOpen] = useState(false);
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    zIndex: isDragging ? 10 : 1,
+    zIndex: isDragging ? 10 : menuOpen ? 40 : 1,
   };
 
   const wordCount = useMemo(() => countWords(chapter.content), [chapter.content]);
@@ -226,6 +232,7 @@ const SortableChapter: React.FC<SortableChapterProps> = ({
         ) : (
           <ChapterMenu
             isDarkMode={isDarkMode}
+            onOpenChange={setMenuOpen}
             onDuplicate={() => onDuplicateChapter(chapter.id)}
             onDelete={() => setConfirmDeleteId(chapter.id)}
             onExportDocx={() => onExportChapter(chapter.id, 'docx')}
