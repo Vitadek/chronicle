@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Book, Plus, MoreVertical, Menu, X, Trash2, Settings, ChevronLeft, Moon, Sun, Cloud, Layout, Copy, GripVertical, FileText, List, Search, Upload, Check, Download, Briefcase, User, Info, Library, Sparkles, AlignLeft, Bot, Smartphone, Clock, SpellCheck, CaseSensitive } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { Chapter, ManuscriptMetadata, UserProfile } from '../types';
+import { Chapter, ManuscriptMetadata, UserProfile, ExportSettings, DEFAULT_EXPORT_SETTINGS } from '../types';
 import { exportToManuscriptDocx, exportToMarkdown, exportToHtml } from '../lib/exportService';
 import { exportToEpub } from '../lib/epubExport';
 import { countWords, readingMinutes, formatWordCount } from '../lib/wordCount';
@@ -94,6 +94,8 @@ interface SidebarProps {
   onDeleteManuscript?: () => void;
   /** Navigate back to the Library view (clears current manuscript selection). */
   onReturnToLibrary?: () => void;
+  /** Per-format export preferences (HTML theme, Hugo front matter, EPUB cover/rights). */
+  exportSettings?: ExportSettings;
   /**
    * AI-generated outline. When non-empty, the Outline pane shows this in
    * addition to the structural headings. Lives in App state so it persists
@@ -294,6 +296,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentChapterContent,
   onDeleteManuscript,
   onReturnToLibrary,
+  exportSettings = DEFAULT_EXPORT_SETTINGS,
   aiOutlineMarkdown,
   isAiOutlineLoading,
   onClearAiOutline,
@@ -344,7 +347,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleExportMarkdown = () => {
     try {
       setIsExporting('md');
-      exportToMarkdown(metadata, chapters);
+      exportToMarkdown(metadata, chapters, { markdown: exportSettings.markdown });
     } catch (error) {
       console.error("Export failed:", error);
     } finally {
@@ -355,7 +358,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleExportHtml = () => {
     try {
       setIsExporting('html');
-      exportToHtml(metadata, chapters);
+      exportToHtml(metadata, chapters, { html: exportSettings.html });
     } catch (error) {
       console.error("Export failed:", error);
     } finally {
@@ -371,7 +374,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleExportEpub = async () => {
     try {
       setIsExporting('epub');
-      await exportToEpub(metadata, chapters);
+      await exportToEpub(metadata, chapters, {
+        copyrightNotice: exportSettings.epub.rightsText || undefined,
+        coverSource: exportSettings.epub.coverSource,
+      });
     } catch (error) {
       console.error('EPUB export failed:', error);
     } finally {
@@ -385,16 +391,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
    * and uses the chapter title for the filename.
    */
   const handleExportChapter = async (id: string, format: 'docx' | 'md' | 'html') => {
-    const chapter = chapters.find((c) => c.id === id);
-    if (!chapter) return;
+    const idx = chapters.findIndex((c) => c.id === id);
+    if (idx === -1) return;
+    const chapter = chapters[idx];
     try {
-      const opts = { singleChapter: true };
       if (format === 'docx') {
-        await exportToManuscriptDocx(metadata, [chapter], opts);
+        await exportToManuscriptDocx(metadata, [chapter], { singleChapter: true });
       } else if (format === 'md') {
-        exportToMarkdown(metadata, [chapter], opts);
+        // chapterPosition drives the Hugo `weight` so per-chapter pages keep
+        // their reading order on a static site (1-based).
+        exportToMarkdown(metadata, [chapter], {
+          singleChapter: true,
+          markdown: exportSettings.markdown,
+          chapterPosition: idx + 1,
+        });
       } else {
-        exportToHtml(metadata, [chapter], opts);
+        exportToHtml(metadata, [chapter], { singleChapter: true, html: exportSettings.html });
       }
     } catch (error) {
       console.error('Per-chapter export failed:', error);

@@ -13,7 +13,7 @@ import {
   LineRuleType,
 } from 'docx';
 import { saveAs } from 'file-saver';
-import { Chapter, ManuscriptMetadata } from '../types';
+import { Chapter, ManuscriptMetadata, ExportSettings, DEFAULT_EXPORT_SETTINGS } from '../types';
 import { fileTimestamp } from './exportFilename';
 
 /**
@@ -340,6 +340,16 @@ export interface ExportOptions {
    * "# # #" end marker is dropped since a single chapter isn't an end.
    */
   singleChapter?: boolean;
+  /** Markdown/Hugo front-matter preferences (defaults applied if absent). */
+  markdown?: ExportSettings['markdown'];
+  /** HTML theme + title-page preferences (defaults applied if absent). */
+  html?: ExportSettings['html'];
+  /**
+   * 1-based position of the chapter within the manuscript. Used to fill the
+   * Hugo `weight` field on a single-chapter markdown export so the pages sort
+   * in reading order on the static site.
+   */
+  chapterPosition?: number;
 }
 
 export async function exportToManuscriptDocx(
@@ -466,6 +476,50 @@ export async function exportToManuscriptDocx(
 
 // ---- Markdown export (unchanged behaviour, tidied up) ---------------------
 
+/**
+ * Build a Hugo-compatible YAML front-matter block from the export settings.
+ *
+ * `pageTitle` is the title of the page the front matter belongs to — the
+ * manuscript title for a book-wide export, the chapter title for a
+ * single-chapter (per-page) export. `weight` is Hugo's ordering key; we only
+ * emit it when we have a real position to give it.
+ */
+function buildHugoFrontMatter(
+  md: ExportSettings['markdown'],
+  pageTitle: string,
+  author: string,
+  weight: number | undefined,
+): string {
+  // Double-quote and escape for a YAML double-quoted scalar.
+  const q = (s: string) => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  // Split a comma-separated field into a YAML flow sequence, or '' if empty.
+  const list = (raw: string): string => {
+    const items = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    return items.length ? `[${items.map(q).join(', ')}]` : '';
+  };
+
+  const lines: string[] = ['---'];
+  lines.push(`title: ${q(pageTitle)}`);
+  if (md.date) lines.push(`date: ${new Date().toISOString().slice(0, 10)}`);
+  lines.push(`draft: ${md.draft ? 'true' : 'false'}`);
+  if (md.author && author) lines.push(`author: ${q(author)}`);
+  if (md.weight && weight !== undefined) lines.push(`weight: ${weight}`);
+  if (md.series) {
+    const s = list(md.series);
+    if (s) lines.push(`series: ${s}`);
+  }
+  if (md.tags) {
+    const t = list(md.tags);
+    if (t) lines.push(`tags: ${t}`);
+  }
+  if (md.categories) {
+    const c = list(md.categories);
+    if (c) lines.push(`categories: ${c}`);
+  }
+  lines.push('---');
+  return lines.join('\n') + '\n\n';
+}
+
 export function exportToMarkdown(
   metadata: ManuscriptMetadata,
   chapters: Chapter[],
@@ -474,8 +528,18 @@ export function exportToMarkdown(
   const author = stripHtml(metadata.author);
   const title = stripHtml(metadata.title);
   const isSingle = !!options.singleChapter;
+  const mdSettings = options.markdown ?? DEFAULT_EXPORT_SETTINGS.markdown;
 
   let content = '';
+
+  // Hugo front matter, if enabled. For a single-chapter export the "page" is
+  // the chapter, so the front-matter title and weight track the chapter; for a
+  // book-wide export they track the manuscript (no meaningful weight there).
+  if (mdSettings.frontMatter) {
+    const pageTitle = isSingle && chapters[0] ? stripHtml(chapters[0].title) : title;
+    const weight = isSingle ? options.chapterPosition : undefined;
+    content += buildHugoFrontMatter(mdSettings, pageTitle, author, weight);
+  }
 
   // Manuscript-level header (title, author, contact) is suppressed for a
   // single-chapter export — the chapter heading below is sufficient.
@@ -539,6 +603,18 @@ export function exportToHtml(
   const genre = metadata.genre ? stripHtml(metadata.genre) : '';
   const wordCount = countAllWords(chapters);
   const isSingle = !!options.singleChapter;
+  const htmlSettings = options.html ?? DEFAULT_EXPORT_SETTINGS.html;
+
+  // Theme is committed into the file (the reader made an explicit choice), so
+  // we set the palette directly rather than guessing via prefers-color-scheme.
+  const THEME_PALETTES: Record<ExportSettings['html']['theme'], { ink: string; paper: string; rule: string }> = {
+    light: { ink: '#1a1a1a', paper: '#fdfbf7', rule: '#d8d3c4' },
+    sepia: { ink: '#433422', paper: '#f4ecd8', rule: '#d9c8a9' },
+    dark:  { ink: '#e8e2d5', paper: '#1f1d1b', rule: '#3a3733' },
+  };
+  const palette = THEME_PALETTES[htmlSettings.theme] ?? THEME_PALETTES.light;
+  // Title page is book-wide only, and further gated by the user's preference.
+  const showTitlePage = !isSingle && htmlSettings.includeTitlePage;
 
   // Helper: HTML-escape attribute values. (Body chapter HTML comes from
   // TipTap which produces well-formed HTML; we trust its output structure
@@ -573,9 +649,9 @@ export function exportToHtml(
   <style>
     :root {
       --body-font: "Libre Baskerville", Georgia, "Times New Roman", serif;
-      --color-ink: #1a1a1a;
-      --color-paper: #fdfbf7;
-      --color-rule: #d8d3c4;
+      --color-ink: ${palette.ink};
+      --color-paper: ${palette.paper};
+      --color-rule: ${palette.rule};
     }
     * { box-sizing: border-box; }
     html, body { background: var(--color-paper); color: var(--color-ink); }
@@ -634,9 +710,6 @@ export function exportToHtml(
       padding-left: 0;
       margin: 2em 4em;
     }
-    @media (prefers-color-scheme: dark) {
-      :root { --color-ink: #f1ede4; --color-paper: #232220; --color-rule: #3a3936; }
-    }
     @media print {
       body { font-size: 12pt; line-height: 2; max-width: none; margin: 0; padding: 0; }
       @page { margin: 1in; size: letter; }
@@ -645,7 +718,7 @@ export function exportToHtml(
     }
   </style>
 </head>
-<body>${isSingle ? '' : `
+<body>${!showTitlePage ? '' : `
   <header class="title-page">
     <h1>${esc(title)}</h1>
     <div class="by">by ${esc(author)}</div>

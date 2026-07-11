@@ -37,6 +37,12 @@ import { loadCoverBlobUrl } from '../services/coverService';
 interface EpubOptions {
   /** Generic copyright boilerplate is appended unless this is provided. */
   copyrightNotice?: string;
+  /**
+   * Which cover to embed. 'uploaded' (default) uses the manuscript's uploaded
+   * cover art and falls back to the generated SVG if there is none; 'generated'
+   * always uses the generated SVG even when an upload exists.
+   */
+  coverSource?: 'uploaded' | 'generated';
 }
 
 /**
@@ -324,9 +330,12 @@ export async function exportToEpub(
 
   const oebps = zip.folder('OEBPS')!;
 
-  // Cover image: prefer the user's upload, fall back to a generated SVG.
+  // Cover image: prefer the user's upload, fall back to a generated SVG —
+  // unless the export explicitly asks for the generated cover, in which case
+  // we skip the upload entirely.
   let coverFile: { name: string; mime: string };
-  const uploaded = metadata.coverArt ? await fetchUploadedCover(metadata.coverArt) : null;
+  const useGenerated = options.coverSource === 'generated';
+  const uploaded = !useGenerated && metadata.coverArt ? await fetchUploadedCover(metadata.coverArt) : null;
   if (uploaded) {
     const name = `cover.${uploaded.ext}`;
     oebps.file(name, uploaded.bytes);

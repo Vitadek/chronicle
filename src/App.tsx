@@ -23,7 +23,7 @@ import {
 } from './services/aiService';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { Chapter, ManuscriptMetadata, UserProfile, Manuscript, Character, PlotNode, PlotEdge } from './types';
+import { Chapter, ManuscriptMetadata, UserProfile, Manuscript, Character, PlotNode, PlotEdge, ExportSettings, DEFAULT_EXPORT_SETTINGS } from './types';
 import { countWords } from './lib/wordCount';
 import type { Editor } from '@tiptap/react';
 
@@ -66,6 +66,23 @@ export default function App() {
   const [isAiEnabled, setIsAiEnabled] = useState(() => {
     // Default OFF — opt-in. Users who want AI flip it on in Settings.
     return localStorage.getItem('chronicle_ai_enabled') === 'true';
+  });
+  // Per-format export preferences (HTML theme, Hugo markdown front matter,
+  // EPUB rights/cover). Merged over defaults so a stored partial from an older
+  // build still yields a complete, well-shaped settings object.
+  const [exportSettings, setExportSettings] = useState<ExportSettings>(() => {
+    try {
+      const raw = localStorage.getItem('chronicle_export_settings');
+      if (!raw) return DEFAULT_EXPORT_SETTINGS;
+      const parsed = JSON.parse(raw);
+      return {
+        html: { ...DEFAULT_EXPORT_SETTINGS.html, ...parsed.html },
+        markdown: { ...DEFAULT_EXPORT_SETTINGS.markdown, ...parsed.markdown },
+        epub: { ...DEFAULT_EXPORT_SETTINGS.epub, ...parsed.epub },
+      };
+    } catch {
+      return DEFAULT_EXPORT_SETTINGS;
+    }
   });
 
   /**
@@ -340,6 +357,10 @@ export default function App() {
   }, [isAiEnabled]);
 
   useEffect(() => {
+    localStorage.setItem('chronicle_export_settings', JSON.stringify(exportSettings));
+  }, [exportSettings]);
+
+  useEffect(() => {
     localStorage.setItem('chronicle_ai_bubble_menu', isAiBubbleMenuEnabled.toString());
   }, [isAiBubbleMenuEnabled]);
 
@@ -591,35 +612,44 @@ export default function App() {
   }, [currentManuscriptId]);
 
   if (!currentManuscriptId || !metadata) {
+    // Global Settings is a full page, not an overlay: when it's open it takes
+    // over the library view entirely (closing returns to the library).
+    if (isGlobalSettingsOpen) {
+      return (
+        <PluginProvider syncSignal={remoteRevision} aiConfig={aiConfig}>
+          <GlobalSettings
+            onClose={() => setIsGlobalSettingsOpen(false)}
+            isDarkMode={isDarkMode}
+            onToggleTheme={() => setIsDarkMode(!isDarkMode)}
+            userProfile={userProfile}
+            onUpdateUserProfile={(newUserProfile) => setUserProfile(prev => ({ ...prev, ...newUserProfile }))}
+            isAiEnabled={isAiEnabled}
+            onToggleAiEnabled={() => {
+              const turningOn = !isAiEnabled;
+              setIsAiEnabled(turningOn);
+              if (turningOn && !aiConfig) {
+                updateAiConfig(defaultAiConfig());
+              }
+            }}
+            aiConfig={aiConfig}
+            onUpdateAiConfig={updateAiConfig}
+            serverAiProviders={serverAiProviders}
+            onRevalidateAi={handleRevalidateAi}
+            exportSettings={exportSettings}
+            onUpdateExportSettings={setExportSettings}
+          />
+        </PluginProvider>
+      );
+    }
     return (
       <PluginProvider syncSignal={remoteRevision} aiConfig={aiConfig}>
-        <LibraryView 
+        <LibraryView
           onSelectManuscript={setCurrentManuscriptId}
           onCreateNew={handleCreateNew}
           onImportManuscript={handleImportManuscript}
           onOpenSettings={() => setIsGlobalSettingsOpen(true)}
           isDarkMode={isDarkMode}
           refreshSignal={remoteRevision}
-        />
-        <GlobalSettings
-          isOpen={isGlobalSettingsOpen}
-          onClose={() => setIsGlobalSettingsOpen(false)}
-          isDarkMode={isDarkMode}
-          onToggleTheme={() => setIsDarkMode(!isDarkMode)}
-          userProfile={userProfile}
-          onUpdateUserProfile={(newUserProfile) => setUserProfile(prev => ({ ...prev, ...newUserProfile }))}
-          isAiEnabled={isAiEnabled}
-          onToggleAiEnabled={() => {
-            const turningOn = !isAiEnabled;
-            setIsAiEnabled(turningOn);
-            if (turningOn && !aiConfig) {
-              updateAiConfig(defaultAiConfig());
-            }
-          }}
-          aiConfig={aiConfig}
-          onUpdateAiConfig={updateAiConfig}
-          serverAiProviders={serverAiProviders}
-          onRevalidateAi={handleRevalidateAi}
         />
       </PluginProvider>
     );
@@ -696,6 +726,7 @@ export default function App() {
           onUpdateUserProfile={(newUserProfile) => setUserProfile(prev => ({ ...prev, ...newUserProfile }))}
           onDeleteManuscript={handleDeleteManuscript}
           onReturnToLibrary={() => setCurrentManuscriptId(null)}
+          exportSettings={exportSettings}
           aiOutlineMarkdown={aiOutlineMarkdown}
           isAiOutlineLoading={isAiOutlineLoading}
           onClearAiOutline={() => setAiOutlineMarkdown('')}

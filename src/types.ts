@@ -53,6 +53,65 @@ export interface Manuscript {
   plotEdges?: PlotEdge[];
 }
 
+/** Colour scheme baked into an HTML export's inlined stylesheet. */
+export type HtmlExportTheme = 'light' | 'sepia' | 'dark';
+
+/** Which image the EPUB cover uses. */
+export type EpubCoverSource = 'uploaded' | 'generated';
+
+/**
+ * Per-format export preferences. Global (not per-manuscript) — they live in
+ * localStorage and are edited from the Global Settings page. Consumed by the
+ * exporters in src/lib/exportService.ts and src/lib/epubExport.ts.
+ */
+export interface ExportSettings {
+  html: {
+    /** Colour scheme committed into the file (no prefers-color-scheme guess). */
+    theme: HtmlExportTheme;
+    /** Emit the centered title page before the chapters (book-wide export). */
+    includeTitlePage: boolean;
+  };
+  markdown: {
+    /** Emit Hugo-compatible YAML front matter at the top of the file. */
+    frontMatter: boolean;
+    /** `draft: true` in front matter — keeps the page out of a Hugo build. */
+    draft: boolean;
+    /** Include `author`. */
+    author: boolean;
+    /** Include `date` (export date, ISO). */
+    date: boolean;
+    /** Include `weight` for deterministic ordering (chapter position). */
+    weight: boolean;
+    /** Hugo `series` taxonomy value (blank = omitted). */
+    series: string;
+    /** Comma-separated Hugo `tags` (blank = omitted). */
+    tags: string;
+    /** Comma-separated Hugo `categories` (blank = omitted). */
+    categories: string;
+  };
+  epub: {
+    /** Copyright / rights notice for the copyright page (blank = boilerplate). */
+    rightsText: string;
+    /** Prefer the uploaded cover, or always generate the SVG cover. */
+    coverSource: EpubCoverSource;
+  };
+}
+
+export const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
+  html: { theme: 'light', includeTitlePage: true },
+  markdown: {
+    frontMatter: true,
+    draft: false,
+    author: true,
+    date: true,
+    weight: true,
+    series: '',
+    tags: '',
+    categories: '',
+  },
+  epub: { rightsText: '', coverSource: 'uploaded' },
+};
+
 /**
  * Character sheet following the LSnarrative Character Map framework.
  * The only required field is `name` so the user can add a character to
