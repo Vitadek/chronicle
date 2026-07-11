@@ -1,0 +1,91 @@
+# Production stack: Chronicle behind Caddy (automatic HTTPS via Let's Encrypt)
+# with Authelia forward-auth and Nextcloud hybrid storage. Full walkthrough in
+# DEPLOY.md.
+#
+#   cp .env.prod.example .env   # then fill in secrets
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Chronicle itself is never published to the host — only Caddy is. Everything
+# else talks over the internal Docker network.
+services:
+  # TLS terminator + reverse proxy. Caddy fetches/renews Let's Encrypt certs
+  # automatically for the domains in ./Caddyfile (ports 80/443 must be reachable
+  # from the internet for the ACME challenge).
+  caddy:
+    image: caddy:2-alpine
+    container_name: chronicle-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3 (QUIC)
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data       # persists issued certificates
+      - caddy-config:/config
+    depends_on:
+      - authelia
+      - chronicle
+
+  # Identity provider. Caddy calls its /api/verify endpoint (forward_auth) and,
+  # on success, injects Remote-User / Remote-Email headers that Chronicle trusts.
+  authelia:
+    image: authelia/authelia:4.38
+    container_name: chronicle-authelia
+    restart: unless-stopped
+    volumes:
+      - ./authelia:/config     # configuration.yml + users_database.yml + its db
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--no-check-certificate", "--spider", "http://localhost:9091/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  chronicle:
+    image: ghcr.io/vitadek/chronicle:latest
+    container_name: chronicle
+    restart: unless-stopped
+    expose:
+      - "3000"                 # internal only; Caddy reverse-proxies to this
+    volumes:
+      - chronicle-data:/data   # SQLite DB + cover art
+    environment:
+      # --- Auth: trust identity headers from Authelia (via Caddy forward_auth) ---
+      AUTH_MODE: forward
+      AUTH_FORWARD_HEADER_USER: Remote-User
+      AUTH_FORWARD_HEADER_EMAIL: Remote-Email
+      # Only accept forward-auth headers from these peers (loopback + RFC1918 +
+      # the Docker network). Header values from anywhere else are ignored.
+      AUTH_FORWARD_TRUSTED_PROXIES: "127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8,192.168.0.0/16"
+      # --- Self-hosted grammar engine (internal) ---
+      LANGUAGETOOL_URL: http://languagetool:8010
+      # --- Nextcloud hybrid storage: local speed + Nextcloud redundancy ---
+      STORAGE_PROVIDER: hybrid
+      NEXTCLOUD_URL: ${NEXTCLOUD_URL}
+      NC_USER: ${NC_USER}
+      NC_PASS: ${NC_PASS}
+      NC_DIR: ${NC_DIR:-Chronicle_Storage}
+      # --- AI proxy (server-side, optional). Keys come from .env, never the browser. ---
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      - languagetool
+
+  # LanguageTool grammar server. Internal only; Chronicle proxies it at
+  # /api/grammar/check.
+  languagetool:
+    image: erikvl87/languagetool:latest
+    container_name: chronicle-languagetool
+    restart: unless-stopped
+    environment:
+      - Java_Xms=256m
+      - Java_Xmx=768m
+
+volumes:
+  chronicle-data:
+  caddy-data:
+  caddy-config:

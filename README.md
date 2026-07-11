@@ -77,6 +77,11 @@ for the other auth modes (bearer token / reverse-proxy forward-auth / OIDC), AI
 provider keys, and Nextcloud redundancy, and add whichever you want under
 `environment:`.
 
+> **Deploying for real?** See **[DEPLOY.md](./DEPLOY.md)** for a full production
+> stack — Caddy (automatic HTTPS) + Authelia forward-auth + Nextcloud hybrid
+> storage — with ready-to-edit [`docker-compose.prod.yml`](./docker-compose.prod.yml)
+> and [`.env.prod.example`](./.env.prod.example).
+
 ### Build from source instead
 
 To build the image yourself (e.g. to hack on it), the repo's
