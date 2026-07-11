@@ -16,12 +16,56 @@ Open <http://localhost:3000>. Data is written to `./data/chronicle.db`.
 
 ## Quick start (Docker)
 
+The published image is multi-arch (`linux/amd64` + `linux/arm64`), so it runs
+on a normal x86 VPS or a Raspberry Pi. No clone, no build — just drop this into
+a `docker-compose.yml`:
+
+```yaml
+services:
+  chronicle:
+    image: ghcr.io/vitadek/chronicle:latest
+    container_name: chronicle
+    restart: unless-stopped
+    ports:
+      - "3000:3000"           # -> http://localhost:3000
+    volumes:
+      - chronicle-data:/data  # manuscripts + SQLite DB live here
+    environment:
+      - AUTH_MODE=none        # single user, no login. Others: token | forward | oidc
+
+volumes:
+  chronicle-data:
+```
+
+Then:
+
 ```bash
 docker compose up -d
 ```
 
-Persists to a named volume (`chronicle-data`). Add the env vars you want
-from `.env.example` to `docker-compose.yml`.
+Open <http://localhost:3000> and start writing. Your work persists in the
+`chronicle-data` volume, independent of the container. Update to the latest
+build any time with:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Everything beyond the above is optional — see [`.env.example`](./.env.example)
+for the other auth modes (bearer token / reverse-proxy forward-auth / OIDC), AI
+provider keys, and Nextcloud redundancy, and add whichever you want under
+`environment:`.
+
+### Build from source instead
+
+To build the image yourself (e.g. to hack on it), the repo's
+`docker-compose.yml` uses `build: .`:
+
+```bash
+git clone https://github.com/Vitadek/chronicle.git
+cd chronicle
+docker compose up -d --build
+```
 
 ## Features
 
