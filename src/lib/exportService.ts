@@ -13,6 +13,7 @@ import {
   LineRuleType,
 } from 'docx';
 import { saveAs } from 'file-saver';
+import JSZip from 'jszip';
 import { Chapter, ManuscriptMetadata, ExportSettings, DEFAULT_EXPORT_SETTINGS } from '../types';
 import { fileTimestamp } from './exportFilename';
 
@@ -520,11 +521,29 @@ function buildHugoFrontMatter(
   return lines.join('\n') + '\n\n';
 }
 
-export function exportToMarkdown(
+/** Convert the editor's chapter HTML to Markdown body text. */
+function chapterHtmlToMarkdown(html: string): string {
+  return html
+    .replace(/<p>(.*?)<\/p>/gi, '$1\n\n')
+    .replace(/<strong>(.*?)<\/strong>/gi, '**$1**')
+    .replace(/<b>(.*?)<\/b>/gi, '**$1**')
+    .replace(/<em>(.*?)<\/em>/gi, '*$1*')
+    .replace(/<i>(.*?)<\/i>/gi, '*$1*')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<blockquote>(.*?)<\/blockquote>/gi, '> $1\n\n')
+    .replace(/<[^>]*>/g, '');
+}
+
+/**
+ * Build the Markdown document string (front matter + headings + body) for the
+ * given chapters. Shared by the single-file, per-chapter, and zip exporters --
+ * the BOM and file writing happen at the call site.
+ */
+function buildMarkdownContent(
   metadata: ManuscriptMetadata,
   chapters: Chapter[],
-  options: ExportOptions = {},
-): void {
+  options: ExportOptions,
+): string {
   const author = stripHtml(metadata.author);
   const title = stripHtml(metadata.title);
   const isSingle = !!options.singleChapter;
@@ -542,7 +561,7 @@ export function exportToMarkdown(
   }
 
   // Manuscript-level header (title, author, contact) is suppressed for a
-  // single-chapter export — the chapter heading below is sufficient.
+  // single-chapter export -- the chapter heading below is sufficient.
   if (!isSingle) {
     content += `# ${title}\n`;
     content += `By ${author}\n\n`;
@@ -560,27 +579,79 @@ export function exportToMarkdown(
     // Promote chapter title to top-level heading when there's no manuscript
     // header above it, so the file reads as a complete standalone document.
     content += `${isSingle ? '#' : '##'} ${chapter.title}\n\n`;
-    const md = chapter.content
-      .replace(/<p>(.*?)<\/p>/gi, '$1\n\n')
-      .replace(/<strong>(.*?)<\/strong>/gi, '**$1**')
-      .replace(/<b>(.*?)<\/b>/gi, '**$1**')
-      .replace(/<em>(.*?)<\/em>/gi, '*$1*')
-      .replace(/<i>(.*?)<\/i>/gi, '*$1*')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<blockquote>(.*?)<\/blockquote>/gi, '> $1\n\n')
-      .replace(/<[^>]*>/g, '');
-    content += `${md}\n\n`;
+    content += `${chapterHtmlToMarkdown(chapter.content)}\n\n`;
   });
+
+  return content;
+}
+
+/** UTF-8 BOM: makes editors detect the encoding and render smart quotes /
+ *  em dashes correctly instead of mojibake. Hugo strips a leading BOM before
+ *  parsing front matter, so the `---` fence is unaffected. */
+const UTF8_BOM = '\uFEFF';
+
+export function exportToMarkdown(
+  metadata: ManuscriptMetadata,
+  chapters: Chapter[],
+  options: ExportOptions = {},
+): void {
+  const title = stripHtml(metadata.title);
+  const isSingle = !!options.singleChapter;
+  const content = buildMarkdownContent(metadata, chapters, options);
 
   const filenameRoot = isSingle && chapters[0]
     ? stripHtml(chapters[0].title).replace(/\s+/g, '_') || 'Chapter'
     : (title.replace(/\s+/g, '_') || 'Manuscript');
-  // Prepend a UTF-8 BOM so editors that would otherwise guess Latin-1/CP-1252
-  // detect the encoding and render smart quotes / em dashes correctly instead
-  // of mojibake ("No—no," -> â€œNoâ€”no,â€). Hugo strips a leading BOM before
-  // parsing front matter, so the `---` fence is unaffected.
-  const blob = new Blob(['\uFEFF', content], { type: 'text/markdown;charset=utf-8' });
+  const blob = new Blob([UTF8_BOM, content], { type: 'text/markdown;charset=utf-8' });
   saveAs(blob, `${filenameRoot}_${fileTimestamp()}.md`);
+}
+
+/** Filesystem-safe kebab slug for a chapter filename (Hugo-friendly). */
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
+/**
+ * Export a selection of chapters as a zip of one Markdown file per chapter --
+ * the natural shape for a Hugo section, where each chapter is its own page.
+ *
+ * Each entry is a standalone single-chapter document (its own front matter and
+ * `weight`). `number` is the chapter's position in the manuscript (1-based),
+ * used both for the Hugo `weight` and the zero-padded filename prefix so the
+ * files sort in reading order on disk and on the rendered site.
+ */
+export async function exportChaptersAsMarkdownZip(
+  metadata: ManuscriptMetadata,
+  selection: { chapter: Chapter; number: number }[],
+  options: ExportOptions = {},
+): Promise<void> {
+  const mdSettings = options.markdown ?? DEFAULT_EXPORT_SETTINGS.markdown;
+  const zip = new JSZip();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const usedNames = new Set<string>();
+
+  for (const { chapter, number } of selection) {
+    const content = buildMarkdownContent(metadata, [chapter], {
+      singleChapter: true,
+      markdown: mdSettings,
+      chapterPosition: number,
+    });
+    const slug = slugify(stripHtml(chapter.title)) || `chapter-${number}`;
+    let name = `${pad(number)}-${slug}.md`;
+    // Guard against two chapters sharing a slug (e.g. both "Untitled").
+    let dupe = 2;
+    while (usedNames.has(name)) name = `${pad(number)}-${slug}-${dupe++}.md`;
+    usedNames.add(name);
+    zip.file(name, UTF8_BOM + content);
+  }
+
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const root = stripHtml(metadata.title).replace(/\s+/g, '_') || 'Manuscript';
+  saveAs(blob, `${root}_markdown_${fileTimestamp()}.zip`);
 }
 
 // ---- HTML export ----------------------------------------------------------

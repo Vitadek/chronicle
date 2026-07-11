@@ -3,8 +3,9 @@ import { Book, Plus, MoreVertical, Menu, X, Trash2, Settings, ChevronLeft, Moon,
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { Chapter, ManuscriptMetadata, UserProfile, ExportSettings, DEFAULT_EXPORT_SETTINGS } from '../types';
-import { exportToManuscriptDocx, exportToMarkdown, exportToHtml } from '../lib/exportService';
+import { exportToManuscriptDocx, exportToMarkdown, exportToHtml, exportChaptersAsMarkdownZip } from '../lib/exportService';
 import { exportToEpub } from '../lib/epubExport';
+import { MarkdownExportDialog } from './MarkdownExportDialog';
 import { countWords, readingMinutes, formatWordCount } from '../lib/wordCount';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { CoverArtUpload } from './CoverArtUpload';
@@ -322,6 +323,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [isIssuesPanelEnabled, view]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<'docx' | 'md' | 'html' | 'epub' | null>(null);
+  const [showMarkdownDialog, setShowMarkdownDialog] = useState(false);
   const [confirmDeleteManuscript, setConfirmDeleteManuscript] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -344,12 +346,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const handleExportMarkdown = () => {
+  /**
+   * Markdown export from the chapter picker. A single selected chapter emits
+   * one `.md`; multiple emit a `.zip` of one file per chapter. Either way the
+   * Hugo `weight` is the chapter's real position in the manuscript (1-based),
+   * so a partial selection still sorts correctly on the static site.
+   */
+  const handleExportMarkdownSelection = async (selectedIds: string[]) => {
+    const idSet = new Set(selectedIds);
+    // Pair each selected chapter with its manuscript position (the weight).
+    const picked = chapters
+      .map((chapter, index) => ({ chapter, number: index + 1 }))
+      .filter(({ chapter }) => idSet.has(chapter.id));
+    if (picked.length === 0) return;
+
     try {
       setIsExporting('md');
-      exportToMarkdown(metadata, chapters, { markdown: exportSettings.markdown });
+      if (picked.length === 1) {
+        exportToMarkdown(metadata, [picked[0].chapter], {
+          singleChapter: true,
+          markdown: exportSettings.markdown,
+          chapterPosition: picked[0].number,
+        });
+      } else {
+        await exportChaptersAsMarkdownZip(metadata, picked, { markdown: exportSettings.markdown });
+      }
     } catch (error) {
-      console.error("Export failed:", error);
+      console.error('Export failed:', error);
     } finally {
       setIsExporting(null);
     }
@@ -983,8 +1006,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       )}
                     </button>
 
-                    <button 
-                      onClick={handleExportMarkdown}
+                    <button
+                      onClick={() => setShowMarkdownDialog(true)}
                       disabled={isExporting !== null}
                       className={cn(
                       "w-full flex items-center justify-between px-6 py-4 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95 border border-black/10 dark:border-white/10",
@@ -1585,6 +1608,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </motion.aside>
         )}
       </AnimatePresence>
+
+      <MarkdownExportDialog
+        isOpen={showMarkdownDialog}
+        onClose={() => setShowMarkdownDialog(false)}
+        isDarkMode={isDarkMode}
+        chapters={chapters}
+        onExport={handleExportMarkdownSelection}
+      />
     </>
   );
 };
