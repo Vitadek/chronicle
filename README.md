@@ -4,6 +4,27 @@ A minimal, distraction-free writing app for novelists. TipTap-based editor,
 multi-manuscript library, optional AI assistance, and a small sync backend
 so your work travels between devices.
 
+## Screenshots
+
+**The Library** — your manuscripts, in light and dark mode:
+
+<p align="center">
+  <img src="screenshots/landing_page.webp" alt="The Library in light mode" width="49%">
+  <img src="screenshots/landing_page_dark_mode.webp" alt="The Library in dark mode" width="49%">
+</p>
+
+**The writing space** — distraction-free, with focus dimming on the current paragraph:
+
+<p align="center">
+  <img src="screenshots/writing_space.webp" alt="Distraction-free writing space" width="90%">
+</p>
+
+**Export** — Standard Manuscript Format `.docx`, Markdown, HTML, or EPUB3 (with cover & table of contents):
+
+<p align="center">
+  <img src="screenshots/export_page.webp" alt="Export panel with .docx, Markdown, HTML and EPUB3 options" width="300">
+</p>
+
 ## Quick start (local dev)
 
 ```bash
