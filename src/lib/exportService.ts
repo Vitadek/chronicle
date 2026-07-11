@@ -521,9 +521,34 @@ function buildHugoFrontMatter(
   return lines.join('\n') + '\n\n';
 }
 
+/**
+ * Decode HTML character references (`&nbsp;`, `&amp;`, `&#39;`, `&mdash;`, …)
+ * to their real characters. The editor's HTML keeps these as entities, but
+ * Markdown is plain text — left as-is they print literally ("&nbsp;"). A
+ * detached <textarea> is the standard, safe decoder: its content is raw text
+ * (RCDATA), so nothing is executed — only the entities are resolved. The
+ * resulting non-breaking space (U+00A0) is normalized to a plain space so it
+ * can't create odd leading-space artifacts in Markdown.
+ */
+function decodeHtmlEntities(s: string): string {
+  if (typeof document === 'undefined') {
+    // SSR/no-DOM fallback: cover the handful the editor actually emits.
+    return s
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#0*39;|&apos;/gi, "'");
+  }
+  const el = document.createElement('textarea');
+  el.innerHTML = s;
+  return el.value.replace(/\u00A0/g, ' ');
+}
+
 /** Convert the editor's chapter HTML to Markdown body text. */
 function chapterHtmlToMarkdown(html: string): string {
-  return html
+  const md = html
     .replace(/<p>(.*?)<\/p>/gi, '$1\n\n')
     .replace(/<strong>(.*?)<\/strong>/gi, '**$1**')
     .replace(/<b>(.*?)<\/b>/gi, '**$1**')
@@ -532,6 +557,9 @@ function chapterHtmlToMarkdown(html: string): string {
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<blockquote>(.*?)<\/blockquote>/gi, '> $1\n\n')
     .replace(/<[^>]*>/g, '');
+  // Decode entities last, so the tag-stripping regexes above still see the
+  // original markup and any decoded `<`/`>` aren't re-treated as tags.
+  return decodeHtmlEntities(md);
 }
 
 /**
