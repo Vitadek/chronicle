@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { List, Sparkles, Network, Users, MessageSquare, Maximize2, Minimize2, X, FileText, AlignLeft } from 'lucide-react';
-import { motion } from 'motion/react';
+import React, { useState, useEffect, useRef } from 'react';
+import { List, Sparkles, Network, Users, MessageSquare, ExternalLink, PanelRightClose, FileText, AlignLeft } from 'lucide-react';
 import type { Editor } from '@tiptap/react';
 import { cn } from '../lib/utils';
 import { Chapter, Character, PlotNode, PlotEdge } from '../types';
@@ -8,6 +7,7 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { CharacterSheet, DEFAULT_CHARACTER_PALETTE } from './CharacterSheet';
 import { PlotCanvas } from './PlotCanvas';
 import { CommentsPanel } from './CommentsPanel';
+import { PopoutWindow } from './PopoutWindow';
 
 export type OutlineTab = 'synopsis' | 'navigation' | 'plot' | 'characters' | 'comments';
 
@@ -53,18 +53,32 @@ interface OutlinePaneProps {
 export const OutlinePane: React.FC<OutlinePaneProps> = (props) => {
   const [tab, setTab] = useState<OutlineTab>('synopsis');
   const [openCharacterId, setOpenCharacterId] = useState<string | null>(null);
-  const [isPoppedOut, setIsPoppedOut] = useState(false);
+  // The planning pane can detach into its own browser window (second-monitor
+  // use). The window handle lives in a ref; `isWindowed` drives what renders.
+  const [isWindowed, setIsWindowed] = useState(false);
+  const popoutWindowRef = useRef<Window | null>(null);
   const { isDarkMode } = props;
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isPoppedOut) {
-        setIsPoppedOut(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPoppedOut]);
+  // Close the popout if the pane unmounts (manuscript closed, tab switched away).
+  useEffect(() => () => { popoutWindowRef.current?.close(); }, []);
+
+  const togglePopout = () => {
+    if (isWindowed) {
+      popoutWindowRef.current?.close();
+      popoutWindowRef.current = null;
+      setIsWindowed(false);
+      return;
+    }
+    // Open in the click handler (a user gesture) so popup blockers allow it.
+    const w = window.open(
+      '',
+      'chronicle-planning',
+      'width=980,height=820,menubar=no,toolbar=no,location=no',
+    );
+    if (!w) return; // blocked — leave the pane inline
+    popoutWindowRef.current = w;
+    setIsWindowed(true);
+  };
 
   const tabs: Array<{ id: OutlineTab; label: string; icon: typeof List }> = [
     { id: 'synopsis', label: 'Outline', icon: FileText },
@@ -73,8 +87,6 @@ export const OutlinePane: React.FC<OutlinePaneProps> = (props) => {
     { id: 'characters', label: 'Cast', icon: Users },
     { id: 'comments', label: 'Notes', icon: MessageSquare },
   ];
-
-  const canPopOut = tab === 'plot' || tab === 'characters';
 
   const renderContent = () => {
     if (tab === 'synopsis') {
@@ -166,7 +178,7 @@ export const OutlinePane: React.FC<OutlinePaneProps> = (props) => {
     return null;
   };
 
-  return (
+  const paneBody = (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       <div className="flex items-center justify-between mb-3 gap-2">
         <div
@@ -178,10 +190,7 @@ export const OutlinePane: React.FC<OutlinePaneProps> = (props) => {
           {tabs.map((t) => (
             <button
               key={t.id}
-              onClick={() => {
-                setTab(t.id);
-                if (t.id !== 'plot' && t.id !== 'characters') setIsPoppedOut(false);
-              }}
+              onClick={() => setTab(t.id)}
               className={cn(
                 'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] uppercase tracking-wider font-bold transition-all whitespace-nowrap',
                 tab === t.id
@@ -195,68 +204,66 @@ export const OutlinePane: React.FC<OutlinePaneProps> = (props) => {
           ))}
         </div>
 
-        {canPopOut && (
-          <button
-            onClick={() => setIsPoppedOut(!isPoppedOut)}
-            className={cn(
-              'p-2 rounded-xl border transition-all hover:scale-105 active:scale-95 shrink-0',
-              isDarkMode ? 'bg-white/5 border-white/10 text-white/60 hover:text-white' : 'bg-black/5 border-black/10 text-black/60 hover:text-black',
-            )}
-            title={isPoppedOut ? "Exit Fullscreen" : "Fullscreen"}
-          >
-            {isPoppedOut ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
-        )}
+        <button
+          onClick={togglePopout}
+          className={cn(
+            'p-2 rounded-xl border transition-all hover:scale-105 active:scale-95 shrink-0',
+            isDarkMode ? 'bg-white/5 border-white/10 text-white/60 hover:text-white' : 'bg-black/5 border-black/10 text-black/60 hover:text-black',
+          )}
+          title={isWindowed ? 'Return to sidebar' : 'Open in a separate window'}
+        >
+          {isWindowed ? <PanelRightClose className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />}
+        </button>
       </div>
 
       <div className="flex-1 flex flex-col min-h-0">
         {renderContent()}
       </div>
-
-      {isPoppedOut && (
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.98 }}
-          className={cn(
-            "fixed inset-0 z-[100] flex flex-col p-4 sm:p-8",
-            isDarkMode ? "bg-[#1A1918]" : "bg-[#FBFBF9]"
-          )}
-        >
-          <div className="flex items-center justify-between mb-6 shrink-0">
-            <div className="flex items-center gap-3">
-              <div className={cn(
-                "p-2 rounded-xl",
-                isDarkMode ? "bg-white/5" : "bg-black/5"
-              )}>
-                {tab === 'plot' ? <Network className="w-5 h-5" /> : <Users className="w-5 h-5" />}
-              </div>
-              <div>
-                <h2 className="text-lg font-serif italic">{tab === 'plot' ? 'Plot Canvas' : 'Cast & Characters'}</h2>
-                <p className="text-[10px] uppercase tracking-widest opacity-40 font-bold">Fullscreen View</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setIsPoppedOut(false)}
-              className={cn(
-                "p-3 rounded-full transition-all hover:scale-110 active:scale-95",
-                isDarkMode ? "bg-white/10 hover:bg-white/20 text-white" : "bg-black/10 hover:bg-black/20 text-black"
-              )}
-            >
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-          
-          <div className={cn(
-            "flex-1 min-h-0 rounded-2xl border overflow-hidden shadow-2xl",
-            isDarkMode ? "bg-black/20 border-white/5" : "bg-white border-black/5"
-          )}>
-            {renderContent()}
-          </div>
-        </motion.div>
-      )}
     </div>
   );
+
+  // Detached into its own window: show a placeholder in the sidebar, and portal
+  // the live pane into the popout (same React subtree → state stays in sync).
+  if (isWindowed && popoutWindowRef.current) {
+    return (
+      <>
+        <div className="flex flex-col flex-1 min-h-0 items-center justify-center text-center px-8 gap-4">
+          <div className={cn('p-3 rounded-2xl', isDarkMode ? 'bg-white/5' : 'bg-black/5')}>
+            <ExternalLink className="w-6 h-6 opacity-40" />
+          </div>
+          <div>
+            <p className="text-xs font-bold">Planning board opened in a separate window</p>
+            <p className="text-[10px] opacity-40 mt-1 leading-relaxed">
+              Switch tabs and edit there — changes sync live with your manuscript.
+            </p>
+          </div>
+          <button
+            onClick={togglePopout}
+            className={cn(
+              'px-4 py-2 rounded-xl text-[10px] uppercase font-black tracking-widest transition-all',
+              isDarkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-black/5 hover:bg-black/10 text-black',
+            )}
+          >
+            Bring back
+          </button>
+        </div>
+
+        <PopoutWindow
+          targetWindow={popoutWindowRef.current}
+          title="Planning — Chronicle"
+          isDarkMode={isDarkMode}
+          onClose={() => {
+            popoutWindowRef.current = null;
+            setIsWindowed(false);
+          }}
+        >
+          {paneBody}
+        </PopoutWindow>
+      </>
+    );
+  }
+
+  return paneBody;
 };
 
 // ---------------------------------------------------------------------------
