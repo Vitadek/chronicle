@@ -206,7 +206,7 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
       >
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-10 sm:mb-16 border-b border-black/10 dark:border-white/10 pb-6 sm:pb-8 gap-6 sm:gap-4">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-serif italic mb-1 sm:mb-2">The Library</h1>
+            <h1 className="text-3xl sm:text-4xl font-serif mb-1 sm:mb-2">The Library</h1>
             <p className="text-[10px] sm:text-xs uppercase tracking-[0.2em] opacity-40 font-bold">Your Collected Manuscripts</p>
           </div>
           
@@ -264,7 +264,7 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
             <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center mb-8 mx-auto">
               <Book className="w-6 h-6 sm:w-8 sm:h-8 opacity-20" />
             </div>
-            <h2 className="text-xl font-serif italic mb-4">Your library is currently empty</h2>
+            <h2 className="text-xl font-serif mb-4">Your library is currently empty</h2>
             <p className="text-xs opacity-40 mb-10 max-w-sm mx-auto leading-relaxed">
               Every great story begins with a single page. Start your next journey by creating a new manuscript.
             </p>
@@ -331,7 +331,7 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
                       )}
                     </div>
 
-                    <h3 className="text-lg sm:text-xl font-serif italic mb-2 line-clamp-2 leading-tight">{m.title || 'Untitled Manuscript'}</h3>
+                    <h3 className="text-lg sm:text-xl font-serif normal-case mb-2 line-clamp-2 leading-tight">{m.title || 'Untitled Manuscript'}</h3>
                     <div className="flex items-center gap-2 mb-6 sm:mb-8 opacity-40">
                       <User className="w-3 h-3" />
                       <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest truncate">{m.author || 'Anonymous'}</span>

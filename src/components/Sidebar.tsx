@@ -471,7 +471,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { name: 'Inter', family: 'Inter' },
     { name: 'Verdana', family: 'Verdana' },
     { name: 'Roboto', family: 'Roboto' },
-    { name: 'Montserrat', family: 'Montserrat' }
+    { name: 'Montserrat', family: 'Montserrat' },
+    { name: 'Literata', family: 'Literata' }
   ];
 
   const handleHeadingClick = (text: string, level: number) => {

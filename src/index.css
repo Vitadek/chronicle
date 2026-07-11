@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Roboto:wght@400;500;700&family=Montserrat:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Literata:opsz,wght@7..72,400;7..72,600;7..72,700&family=Roboto:wght@400;500;700&family=Montserrat:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -107,6 +107,16 @@
 
 .novel-editor .ProseMirror h1 {
   @apply text-3xl font-manuscript font-bold mb-12 tracking-tight text-center uppercase;
+}
+
+/* The title-page / chapter-title editors must show the case the author
+   actually typed. The formal uppercase treatment on body headings (rule above)
+   would otherwise mask it — you'd type lowercase without noticing, and it would
+   surface lowercase in the Library. Both selectors cover the title editor
+   whether `.novel-title-editor` sits on the ProseMirror element or a wrapper. */
+.novel-editor .novel-title-editor .ProseMirror h1,
+.novel-editor .ProseMirror.novel-title-editor h1 {
+  text-transform: none;
 }
 
 .novel-title-editor .ProseMirror p {
