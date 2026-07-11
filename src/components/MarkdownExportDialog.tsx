@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Layout, Check, FileArchive, FileText } from 'lucide-react';
+import { X, Layout, Check, FileArchive, FileText, Settings2 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { Chapter } from '../types';
+import { Chapter, ExportSettings } from '../types';
+import { MarkdownFrontMatterFields } from './MarkdownFrontMatterFields';
+
+type MarkdownSettings = ExportSettings['markdown'];
 
 interface MarkdownExportDialogProps {
   isOpen: boolean;
@@ -10,8 +13,13 @@ interface MarkdownExportDialogProps {
   isDarkMode: boolean;
   /** Full, ordered chapter list. Position (index + 1) is the Hugo weight. */
   chapters: Chapter[];
-  /** Fired with the selected chapter ids, in manuscript order. */
-  onExport: (selectedIds: string[]) => void;
+  /** Saved Markdown/front-matter defaults. When `promptBeforeExport` is set,
+   *  the dialog shows an editable copy so they can be tweaked per export. */
+  markdownSettings: MarkdownSettings;
+  /** Fired with the selected chapter ids (in manuscript order) and the
+   *  front-matter settings to use for this export (edited copy, or the
+   *  defaults unchanged when the per-export editor is off). */
+  onExport: (selectedIds: string[], markdown: MarkdownSettings) => void;
 }
 
 /**
@@ -19,22 +27,33 @@ interface MarkdownExportDialogProps {
  * `.md`; two or more download a `.zip` of one Markdown file per chapter — the
  * shape a Hugo section expects, each file carrying its own front matter and a
  * `weight` equal to the chapter's number so pages sort in reading order.
+ *
+ * When the saved settings have `promptBeforeExport` on, an editable front-matter
+ * section is shown so the fields can be overridden for this one export without
+ * touching the saved defaults.
  */
 export const MarkdownExportDialog: React.FC<MarkdownExportDialogProps> = ({
   isOpen,
   onClose,
   isDarkMode,
   chapters,
+  markdownSettings,
   onExport,
 }) => {
   // Default to all chapters selected — the common case is "export the book".
   const [selected, setSelected] = useState<Set<string>>(() => new Set(chapters.map((c) => c.id)));
+  // Per-export, editable copy of the front-matter settings (only surfaced when
+  // promptBeforeExport is on). Re-seeded from the saved defaults each open.
+  const [mdOverride, setMdOverride] = useState<MarkdownSettings>(markdownSettings);
 
   // Re-seed when the dialog is (re)opened or the chapter set changes, so a
   // newly added chapter isn't silently excluded on the next open.
   useEffect(() => {
-    if (isOpen) setSelected(new Set(chapters.map((c) => c.id)));
-  }, [isOpen, chapters]);
+    if (isOpen) {
+      setSelected(new Set(chapters.map((c) => c.id)));
+      setMdOverride(markdownSettings);
+    }
+  }, [isOpen, chapters, markdownSettings]);
 
   // Escape closes, matching the rest of the app's dismissible surfaces.
   useEffect(() => {
@@ -64,9 +83,11 @@ export const MarkdownExportDialog: React.FC<MarkdownExportDialogProps> = ({
   const selectAll = () => setSelected(new Set(chapters.map((c) => c.id)));
   const clear = () => setSelected(new Set());
 
+  const showFrontMatter = markdownSettings.promptBeforeExport;
+
   const handleExport = () => {
     if (count === 0) return;
-    onExport(orderedSelectedIds);
+    onExport(orderedSelectedIds, showFrontMatter ? mdOverride : markdownSettings);
     onClose();
   };
 
@@ -160,6 +181,21 @@ export const MarkdownExportDialog: React.FC<MarkdownExportDialogProps> = ({
                   );
                 })}
               </div>
+
+              {/* Per-export front-matter editor (only when enabled in settings) */}
+              {showFrontMatter && (
+                <div className="shrink-0 max-h-[40vh] overflow-y-auto border-t border-black/5 dark:border-white/5 px-6 py-4 space-y-5 custom-scrollbar">
+                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold opacity-40">
+                    <Settings2 className="w-3 h-3" />
+                    <span>Front matter · this export</span>
+                  </div>
+                  <MarkdownFrontMatterFields
+                    value={mdOverride}
+                    onChange={(patch) => setMdOverride((prev) => ({ ...prev, ...patch }))}
+                    isDarkMode={isDarkMode}
+                  />
+                </div>
+              )}
 
               {/* Footer */}
               <div className="flex items-center gap-3 px-6 py-4 border-t border-black/5 dark:border-white/5">

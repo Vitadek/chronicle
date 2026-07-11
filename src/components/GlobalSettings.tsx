@@ -8,6 +8,7 @@ import { ProviderStatus } from '../services/aiService';
 import { AiSettingsPanel } from './AiSettingsPanel';
 import { usePlugins } from '../plugins/PluginManager';
 import { pluginExternalService } from '../services/pluginExternalService';
+import { MarkdownFrontMatterFields } from './MarkdownFrontMatterFields';
 
 interface GlobalSettingsProps {
   onClose: () => void;
@@ -254,82 +255,21 @@ export function GlobalSettings({
             {/* Markdown / Hugo */}
             <div className="rounded-2xl border border-black/5 dark:border-white/5 p-5 space-y-5">
               <h4 className={cn('text-xs font-bold', isDarkMode ? 'text-white' : 'text-black')}>Markdown (Hugo)</h4>
-              <ToggleRow
+              <MarkdownFrontMatterFields
+                value={exportSettings.markdown}
+                onChange={updateMarkdown}
                 isDarkMode={isDarkMode}
-                label="Hugo front matter"
-                hint="Emit a YAML front-matter block for a Hugo static site."
-                checked={exportSettings.markdown.frontMatter}
-                onToggle={() => updateMarkdown({ frontMatter: !exportSettings.markdown.frontMatter })}
               />
 
-              {exportSettings.markdown.frontMatter && (
-                <div className="space-y-5 pl-1 border-l-2 border-black/5 dark:border-white/5 ml-1">
-                  <div className="pl-4 space-y-4">
-                    <ToggleRow
-                      isDarkMode={isDarkMode}
-                      label="date"
-                      hint="Export date (ISO), e.g. 2026-07-10."
-                      checked={exportSettings.markdown.date}
-                      onToggle={() => updateMarkdown({ date: !exportSettings.markdown.date })}
-                    />
-                    <ToggleRow
-                      isDarkMode={isDarkMode}
-                      label="draft"
-                      hint="Sets draft: true so Hugo skips the page in a normal build."
-                      checked={exportSettings.markdown.draft}
-                      onToggle={() => updateMarkdown({ draft: !exportSettings.markdown.draft })}
-                    />
-                    <ToggleRow
-                      isDarkMode={isDarkMode}
-                      label="author"
-                      checked={exportSettings.markdown.author}
-                      onToggle={() => updateMarkdown({ author: !exportSettings.markdown.author })}
-                    />
-                    <ToggleRow
-                      isDarkMode={isDarkMode}
-                      label="weight"
-                      hint="Chapter position, so per-chapter pages keep reading order."
-                      checked={exportSettings.markdown.weight}
-                      onToggle={() => updateMarkdown({ weight: !exportSettings.markdown.weight })}
-                    />
-
-                    <div>
-                      <label className="block text-[10px] uppercase tracking-widest font-bold opacity-30 mb-2">Series</label>
-                      <input
-                        type="text"
-                        value={exportSettings.markdown.series}
-                        onChange={(e) => updateMarkdown({ series: e.target.value })}
-                        placeholder="Optional, single value"
-                        className={inputClass}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] uppercase tracking-widest font-bold opacity-30 mb-2">
-                        Tags <span className="opacity-60 lowercase tracking-normal font-normal">(comma-separated)</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={exportSettings.markdown.tags}
-                        onChange={(e) => updateMarkdown({ tags: e.target.value })}
-                        placeholder="fantasy, epic, first-draft"
-                        className={inputClass}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] uppercase tracking-widest font-bold opacity-30 mb-2">
-                        Categories <span className="opacity-60 lowercase tracking-normal font-normal">(comma-separated)</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={exportSettings.markdown.categories}
-                        onChange={(e) => updateMarkdown({ categories: e.target.value })}
-                        placeholder="fiction"
-                        className={inputClass}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
+              <div className="pt-2 border-t border-black/5 dark:border-white/5">
+                <ToggleRow
+                  isDarkMode={isDarkMode}
+                  label="Edit front matter on every export"
+                  hint="Show these fields in the Markdown export dialog so you can tweak them per export (defaults here stay unchanged)."
+                  checked={exportSettings.markdown.promptBeforeExport}
+                  onToggle={() => updateMarkdown({ promptBeforeExport: !exportSettings.markdown.promptBeforeExport })}
+                />
+              </div>
             </div>
 
             {/* EPUB */}

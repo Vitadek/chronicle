@@ -352,7 +352,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
    * Hugo `weight` is the chapter's real position in the manuscript (1-based),
    * so a partial selection still sorts correctly on the static site.
    */
-  const handleExportMarkdownSelection = async (selectedIds: string[]) => {
+  const handleExportMarkdownSelection = async (
+    selectedIds: string[],
+    markdown: ExportSettings['markdown'],
+  ) => {
     const idSet = new Set(selectedIds);
     // Pair each selected chapter with its manuscript position (the weight).
     const picked = chapters
@@ -365,11 +368,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       if (picked.length === 1) {
         exportToMarkdown(metadata, [picked[0].chapter], {
           singleChapter: true,
-          markdown: exportSettings.markdown,
+          markdown,
           chapterPosition: picked[0].number,
         });
       } else {
-        await exportChaptersAsMarkdownZip(metadata, picked, { markdown: exportSettings.markdown });
+        await exportChaptersAsMarkdownZip(metadata, picked, { markdown });
       }
     } catch (error) {
       console.error('Export failed:', error);
@@ -1614,6 +1617,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         onClose={() => setShowMarkdownDialog(false)}
         isDarkMode={isDarkMode}
         chapters={chapters}
+        markdownSettings={exportSettings.markdown}
         onExport={handleExportMarkdownSelection}
       />
     </>

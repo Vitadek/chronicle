@@ -88,6 +88,12 @@ export interface ExportSettings {
     tags: string;
     /** Comma-separated Hugo `categories` (blank = omitted). */
     categories: string;
+    /**
+     * When true, the Markdown export dialog shows an editable copy of these
+     * front-matter fields so they can be tweaked for that one export without
+     * changing the saved defaults.
+     */
+    promptBeforeExport: boolean;
   };
   epub: {
     /** Copyright / rights notice for the copyright page (blank = boilerplate). */
@@ -108,6 +114,7 @@ export const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
     series: '',
     tags: '',
     categories: '',
+    promptBeforeExport: false,
   },
   epub: { rightsText: '', coverSource: 'uploaded' },
 };
