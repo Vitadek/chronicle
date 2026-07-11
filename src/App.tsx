@@ -51,6 +51,9 @@ export default function App() {
   const [isGrammarCheckEnabled, setIsGrammarCheckEnabled] = useState(() => {
     return localStorage.getItem('chronicle_grammar_check') === 'true';
   });
+  const [isAutoCorrectEnabled, setIsAutoCorrectEnabled] = useState(() => {
+    return localStorage.getItem('chronicle_autocorrect') !== 'false';
+  });
   const [isIssuesPanelEnabled, setIsIssuesPanelEnabled] = useState(() => {
     return localStorage.getItem('chronicle_issues_panel') === 'true';
   });
@@ -311,6 +314,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('chronicle_grammar_check', isGrammarCheckEnabled.toString());
   }, [isGrammarCheckEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('chronicle_autocorrect', isAutoCorrectEnabled.toString());
+  }, [isAutoCorrectEnabled]);
 
   useEffect(() => {
     localStorage.setItem('chronicle_issues_panel', isIssuesPanelEnabled.toString());
@@ -684,6 +691,8 @@ export default function App() {
           onToggleTenseCheck={() => setIsTenseCheckEnabled(!isTenseCheckEnabled)}
           isGrammarCheckEnabled={isGrammarCheckEnabled}
           onToggleGrammarCheck={() => setIsGrammarCheckEnabled(!isGrammarCheckEnabled)}
+          isAutoCorrectEnabled={isAutoCorrectEnabled}
+          onToggleAutoCorrect={() => setIsAutoCorrectEnabled(!isAutoCorrectEnabled)}
           isIssuesPanelEnabled={isIssuesPanelEnabled}
           onToggleIssuesPanel={() => setIsIssuesPanelEnabled(!isIssuesPanelEnabled)}
           tenseHits={tenseHits}
@@ -734,6 +743,7 @@ export default function App() {
               isAutocompleteEnabled={isAutocompleteEnabled}
               isTenseCheckEnabled={isTenseCheckEnabled}
               isGrammarCheckEnabled={isGrammarCheckEnabled}
+              isAutoCorrectEnabled={isAutoCorrectEnabled}
               onTenseShifts={setTenseHits}
               onGrammarMarks={setGrammarMarks}
               isFirstLineIndentEnabled={isFirstLineIndentEnabled}

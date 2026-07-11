@@ -29,6 +29,8 @@ export interface UseChronicleEditorProps {
   isGrammarCheckEnabled?: boolean;
   /** Receives the current set of grammar marks after each recompute. */
   onGrammarMarks?: (marks: GrammarMark[]) => void;
+  /** Deterministic autocorrect + sentence-start capitalization (lib/AutoCorrect.ts). */
+  isAutoCorrectEnabled?: boolean;
 }
 
 export function useChronicleEditor({ 
@@ -42,7 +44,8 @@ export function useChronicleEditor({
   isTenseCheckEnabled = false,
   onTenseShifts,
   isGrammarCheckEnabled = false,
-  onGrammarMarks
+  onGrammarMarks,
+  isAutoCorrectEnabled = true
 }: UseChronicleEditorProps) {
   // Core prose + marks come from the shared module so the mobile editor bundle
   // stays in sync (smart quotes, no-stray-space, marks). The web-only
@@ -125,6 +128,12 @@ export function useChronicleEditor({
       editor.commands.setGrammarCheck(isGrammarCheckEnabled);
     }
   }, [isGrammarCheckEnabled, editor]);
+
+  useEffect(() => {
+    if (editor && !editor.isDestroyed) {
+      editor.commands.setAutoCorrect(isAutoCorrectEnabled);
+    }
+  }, [isAutoCorrectEnabled, editor]);
 
   return editor;
 }

@@ -14,6 +14,7 @@ import {
 } from 'docx';
 import { saveAs } from 'file-saver';
 import { Chapter, ManuscriptMetadata } from '../types';
+import { fileTimestamp } from './exportFilename';
 
 /**
  * Standard Manuscript Format export.
@@ -460,7 +461,7 @@ export async function exportToManuscriptDocx(
     ? stripHtml(chapters[0].title).replace(/\s+/g, '_') || 'Chapter'
     : (title.replace(/\s+/g, '_') || 'Manuscript');
   const blob = await Packer.toBlob(doc);
-  saveAs(blob, isSingle ? `${filenameRoot}.docx` : `${filenameRoot}_Manuscript.docx`);
+  saveAs(blob, isSingle ? `${filenameRoot}_${fileTimestamp()}.docx` : `${filenameRoot}_Manuscript_${fileTimestamp()}.docx`);
 }
 
 // ---- Markdown export (unchanged behaviour, tidied up) ---------------------
@@ -511,7 +512,7 @@ export function exportToMarkdown(
     ? stripHtml(chapters[0].title).replace(/\s+/g, '_') || 'Chapter'
     : (title.replace(/\s+/g, '_') || 'Manuscript');
   const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-  saveAs(blob, `${filenameRoot}.md`);
+  saveAs(blob, `${filenameRoot}_${fileTimestamp()}.md`);
 }
 
 // ---- HTML export ----------------------------------------------------------
@@ -663,5 +664,5 @@ ${chapterHtml}
     ? stripHtml(chapters[0].title).replace(/\s+/g, '_') || 'Chapter'
     : (title.replace(/\s+/g, '_') || 'Manuscript');
   const blob = new Blob([doc], { type: 'text/html;charset=utf-8' });
-  saveAs(blob, `${filenameRoot}.html`);
+  saveAs(blob, `${filenameRoot}_${fileTimestamp()}.html`);
 }

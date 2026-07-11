@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { Chapter, ManuscriptMetadata } from '../types';
+import { fileTimestamp } from './exportFilename';
 import { loadCoverBlobUrl } from '../services/coverService';
 
 /**
@@ -350,6 +351,6 @@ export async function exportToEpub(
   });
 
   const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/epub+zip' });
-  const filename = `${title.replace(/\s+/g, '_') || 'Manuscript'}.epub`;
+  const filename = `${title.replace(/\s+/g, '_') || 'Manuscript'}_${fileTimestamp()}.epub`;
   saveAs(blob, filename);
 }

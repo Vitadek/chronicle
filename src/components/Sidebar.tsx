@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Book, Plus, MoreVertical, Menu, X, Trash2, Settings, ChevronLeft, Moon, Sun, Cloud, Layout, Copy, GripVertical, FileText, List, Search, Upload, Check, Download, Briefcase, User, Info, Library, Sparkles, AlignLeft, Bot, Smartphone, Clock, SpellCheck } from 'lucide-react';
+import { Book, Plus, MoreVertical, Menu, X, Trash2, Settings, ChevronLeft, Moon, Sun, Cloud, Layout, Copy, GripVertical, FileText, List, Search, Upload, Check, Download, Briefcase, User, Info, Library, Sparkles, AlignLeft, Bot, Smartphone, Clock, SpellCheck, CaseSensitive } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { Chapter, ManuscriptMetadata, UserProfile } from '../types';
@@ -54,6 +54,8 @@ interface SidebarProps {
   onToggleTenseCheck: () => void;
   isGrammarCheckEnabled: boolean;
   onToggleGrammarCheck: () => void;
+  isAutoCorrectEnabled: boolean;
+  onToggleAutoCorrect: () => void;
   isIssuesPanelEnabled: boolean;
   onToggleIssuesPanel: () => void;
   tenseHits: TenseShiftHit[];
@@ -254,6 +256,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleTenseCheck,
   isGrammarCheckEnabled,
   onToggleGrammarCheck,
+  isAutoCorrectEnabled,
+  onToggleAutoCorrect,
   isIssuesPanelEnabled,
   onToggleIssuesPanel,
   tenseHits,
@@ -1228,6 +1232,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <div className={cn(
                               "absolute top-1 w-2 h-2 rounded-full transition-all duration-300",
                               isGrammarCheckEnabled ? "bg-white left-5" : "bg-black left-1"
+                            )} />
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={onToggleAutoCorrect}
+                          className="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all text-sm group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <CaseSensitive className="w-4 h-4" />
+                            <span className={cn("font-medium", isDarkMode ? "text-white/80" : "text-black/80")}>
+                              Autocorrect
+                            </span>
+                          </div>
+                          <div className={cn(
+                            "w-8 h-4 rounded-full relative transition-colors duration-300",
+                            isAutoCorrectEnabled ? "bg-white/20" : "bg-black/10"
+                          )}>
+                            <div className={cn(
+                              "absolute top-1 w-2 h-2 rounded-full transition-all duration-300",
+                              isAutoCorrectEnabled ? "bg-white left-5" : "bg-black left-1"
                             )} />
                           </div>
                         </button>

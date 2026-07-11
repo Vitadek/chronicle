@@ -31,6 +31,8 @@ interface EditorViewProps {
   isTenseCheckEnabled?: boolean;
   /** Live grammar/style squiggles in the body editor (lib/Grammar.ts, LanguageTool). */
   isGrammarCheckEnabled?: boolean;
+  /** Deterministic autocorrect + sentence-start capitalization (lib/AutoCorrect.ts). */
+  isAutoCorrectEnabled?: boolean;
   /** Forwarded up to the Issues panel after each checker recompute. */
   onTenseShifts?: (hits: import('../lib/TenseShift').TenseShiftHit[]) => void;
   onGrammarMarks?: (marks: import('../lib/Grammar').GrammarMark[]) => void;
@@ -78,6 +80,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   isAutocompleteEnabled,
   isTenseCheckEnabled = false,
   isGrammarCheckEnabled = false,
+  isAutoCorrectEnabled = true,
   onTenseShifts,
   onGrammarMarks,
   isThesaurusEnabled,
@@ -549,6 +552,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
     placeholder: isTitlePage ? 'Manuscript Title' : 'Chapter Title',
     className: cn('novel-title-editor focus:outline-none mb-12', isTitlePage && 'text-center text-4xl sm:text-6xl'),
     isAutocompleteEnabled,
+    // Titles are deliberate (proper nouns, stylistic casing) — don't autocorrect them.
+    isAutoCorrectEnabled: false,
     isTouchUI,
     onUpdate: (html) => {
       const text = html.replace(/<[^>]*>?/gm, '').trim();
@@ -564,6 +569,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
     isAutocompleteEnabled,
     isTenseCheckEnabled: isTenseCheckEnabled && !isTitlePage,
     isGrammarCheckEnabled: isGrammarCheckEnabled && !isTitlePage,
+    isAutoCorrectEnabled: isAutoCorrectEnabled && !isTitlePage,
     onTenseShifts,
     onGrammarMarks,
     isTouchUI,

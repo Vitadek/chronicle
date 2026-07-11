@@ -3,6 +3,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import CharacterCount from '@tiptap/extension-character-count';
 import Typography from '@tiptap/extension-typography';
 import Underline from '@tiptap/extension-underline';
+import { AutoCorrect } from './AutoCorrect';
 import { Epigraph } from './Epigraph';
 import { CommentMark } from './Comment';
 import { AudioMark } from './Audio';
@@ -66,6 +67,9 @@ export function buildCoreExtensions(
     Placeholder.configure({ placeholder }),
     CharacterCount,
     Typography,
+    // Deterministic autocorrect + sentence-start capitalization. Sits right after
+    // Typography so both share the single-Backspace-undo input-rule behavior.
+    AutoCorrect,
     Epigraph,
     CommentMark,
     AudioMark,
