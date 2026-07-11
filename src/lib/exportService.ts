@@ -575,7 +575,11 @@ export function exportToMarkdown(
   const filenameRoot = isSingle && chapters[0]
     ? stripHtml(chapters[0].title).replace(/\s+/g, '_') || 'Chapter'
     : (title.replace(/\s+/g, '_') || 'Manuscript');
-  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+  // Prepend a UTF-8 BOM so editors that would otherwise guess Latin-1/CP-1252
+  // detect the encoding and render smart quotes / em dashes correctly instead
+  // of mojibake ("No—no," -> â€œNoâ€”no,â€). Hugo strips a leading BOM before
+  // parsing front matter, so the `---` fence is unaffected.
+  const blob = new Blob(['\uFEFF', content], { type: 'text/markdown;charset=utf-8' });
   saveAs(blob, `${filenameRoot}_${fileTimestamp()}.md`);
 }
 
