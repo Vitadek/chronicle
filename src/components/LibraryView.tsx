@@ -331,7 +331,7 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
                       )}
                     </div>
 
-                    <h3 className="text-lg sm:text-xl font-serif normal-case mb-2 line-clamp-2 leading-tight">{m.title || 'Untitled Manuscript'}</h3>
+                    <h3 className="text-lg sm:text-xl font-literata font-semibold normal-case mb-2 line-clamp-2 leading-tight">{m.title || 'Untitled Manuscript'}</h3>
                     <div className="flex items-center gap-2 mb-6 sm:mb-8 opacity-40">
                       <User className="w-3 h-3" />
                       <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest truncate">{m.author || 'Anonymous'}</span>

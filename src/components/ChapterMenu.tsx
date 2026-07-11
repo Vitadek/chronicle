@@ -84,10 +84,12 @@ export const ChapterMenu: React.FC<ChapterMenuProps> = ({
             exit={{ opacity: 0, y: -4, scale: 0.98 }}
             transition={{ duration: 0.12 }}
             className={cn(
+              // Solid, elevated surface. Uses dark: variants (not the JS prop) so it
+              // tracks the real theme, and an opaque fill that stands clearly apart
+              // from the app background — never see-through.
               'absolute right-0 top-full mt-1 w-56 rounded-xl shadow-2xl border z-50 overflow-hidden',
-              isDarkMode
-                ? 'bg-[#2A2927] border-white/10 text-[#F1EDE4]'
-                : 'bg-white border-black/10 text-[#1A1A1A]',
+              'bg-white text-[#1A1A1A] border-black/10',
+              'dark:bg-[#38352F] dark:text-[#F1EDE4] dark:border-white/15',
             )}
             onClick={(e) => e.stopPropagation()}
           >

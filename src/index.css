@@ -5,6 +5,7 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Libre Baskerville", ui-serif, Georgia, serif;
   --font-roboto: "Roboto", ui-sans-serif, system-ui, sans-serif;
+  --font-literata: "Literata", Georgia, serif;
   --font-manuscript: var(--manuscript-font, "Verdana", Geneva, sans-serif);
   
   --color-manuscript-light: #F4F1EA;
