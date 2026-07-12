@@ -146,10 +146,22 @@ export default function App() {
    */
   const [serverAiProviders, setServerAiProviders] = useState<Partial<Record<AiProvider, ProviderStatus>> | undefined>(undefined);
   const [serverAiAvailable, setServerAiAvailable] = useState<boolean | undefined>(undefined);
+  // AI_UI=off on the server strips every AI surface from the UI (a "purist"
+  // deployment). Seeded from the last server answer so an AI_UI=off install
+  // doesn't flash AI UI while /api/ai/config is in flight, and doesn't fail
+  // open if that one request hiccups. First-ever visit defaults to visible.
+  const [isAiUiHidden, setIsAiUiHidden] = useState(() => {
+    return localStorage.getItem('chronicle_ai_ui_hidden') === 'true';
+  });
 
   const loadAiServerConfig = useCallback(async () => {
     const cfg = await fetchAiServerConfig();
     if (!cfg) return;
+    // `=== false` (not `!uiEnabled`): older servers omit the field entirely,
+    // and they must keep defaulting to visible.
+    const hidden = cfg.uiEnabled === false;
+    setIsAiUiHidden(hidden);
+    localStorage.setItem('chronicle_ai_ui_hidden', String(hidden));
     setServerAiProviders(cfg.providers);
     // "AI available" = at least one provider is configured AND its key
     // either passed validation or hasn't been checked yet.
@@ -633,6 +645,9 @@ export default function App() {
             }}
             aiConfig={aiConfig}
             onUpdateAiConfig={updateAiConfig}
+            isAiBubbleMenuEnabled={isAiBubbleMenuEnabled}
+            onToggleAiBubbleMenu={() => setIsAiBubbleMenuEnabled(!isAiBubbleMenuEnabled)}
+            isAiUiHidden={isAiUiHidden}
             serverAiProviders={serverAiProviders}
             onRevalidateAi={handleRevalidateAi}
             exportSettings={exportSettings}
@@ -704,6 +719,7 @@ export default function App() {
           onRevalidateAi={handleRevalidateAi}
           isAiBubbleMenuEnabled={isAiBubbleMenuEnabled}
           onToggleAiBubbleMenu={() => setIsAiBubbleMenuEnabled(!isAiBubbleMenuEnabled)}
+          isAiUiHidden={isAiUiHidden}
           touchControlsMode={touchControlsMode}
           onChangeTouchControls={setTouchControlsMode}
           metadata={metadata}
@@ -772,7 +788,7 @@ export default function App() {
               onTenseShifts={setTenseHits}
               onGrammarMarks={setGrammarMarks}
               isFirstLineIndentEnabled={isFirstLineIndentEnabled}
-              isAiEnabled={isAiEnabled && !!aiConfig}
+              isAiEnabled={isAiEnabled && !!aiConfig && !isAiUiHidden}
               isAiBubbleMenuEnabled={isAiBubbleMenuEnabled}
               isTouchUI={isTouchUI}
               aiConfig={aiConfig}

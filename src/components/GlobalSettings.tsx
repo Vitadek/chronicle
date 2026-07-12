@@ -20,6 +20,10 @@ interface GlobalSettingsProps {
   onToggleAiEnabled: () => void;
   aiConfig: AiConfig | null;
   onUpdateAiConfig: (cfg: AiConfig | null) => void;
+  isAiBubbleMenuEnabled: boolean;
+  onToggleAiBubbleMenu: () => void;
+  /** Server AI_UI=off: render no AI section at all. */
+  isAiUiHidden?: boolean;
   serverAiProviders?: Partial<Record<AiProvider, ProviderStatus>>;
   onRevalidateAi?: () => Promise<void> | void;
   exportSettings: ExportSettings;
@@ -36,6 +40,9 @@ export function GlobalSettings({
   onToggleAiEnabled,
   aiConfig,
   onUpdateAiConfig,
+  isAiBubbleMenuEnabled,
+  onToggleAiBubbleMenu,
+  isAiUiHidden,
   serverAiProviders,
   onRevalidateAi,
   exportSettings,
@@ -367,22 +374,26 @@ export function GlobalSettings({
             </button>
           </section>
 
-          {/* AI Section */}
-          <section className="space-y-6">
-            <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold opacity-40">
-              <Sparkles className="w-3 h-3" />
-              <span>AI Capabilities</span>
-            </div>
-            <AiSettingsPanel
-              isDarkMode={isDarkMode}
-              isAiEnabled={isAiEnabled}
-              onToggleAiEnabled={onToggleAiEnabled}
-              aiConfig={aiConfig}
-              onUpdateAiConfig={onUpdateAiConfig}
-              serverProviders={serverAiProviders}
-              onRevalidate={onRevalidateAi}
-            />
-          </section>
+          {/* AI Section — absent entirely when the server sets AI_UI=off */}
+          {!isAiUiHidden && (
+            <section className="space-y-6">
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold opacity-40">
+                <Sparkles className="w-3 h-3" />
+                <span>AI Capabilities</span>
+              </div>
+              <AiSettingsPanel
+                isDarkMode={isDarkMode}
+                isAiEnabled={isAiEnabled}
+                onToggleAiEnabled={onToggleAiEnabled}
+                aiConfig={aiConfig}
+                onUpdateAiConfig={onUpdateAiConfig}
+                isAiBubbleMenuEnabled={isAiBubbleMenuEnabled}
+                onToggleAiBubbleMenu={onToggleAiBubbleMenu}
+                serverProviders={serverAiProviders}
+                onRevalidate={onRevalidateAi}
+              />
+            </section>
+          )}
 
           {/* Security/Sync Note */}
           <section className="pt-8 border-t border-black/5 dark:border-white/5">

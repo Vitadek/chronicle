@@ -97,6 +97,8 @@ interface SidebarProps {
   onReturnToLibrary?: () => void;
   /** Per-format export preferences (HTML theme, Hugo front matter, EPUB cover/rights). */
   exportSettings?: ExportSettings;
+  /** Server AI_UI=off: render no AI settings or command help at all. */
+  isAiUiHidden?: boolean;
   /**
    * AI-generated outline. When non-empty, the Outline pane shows this in
    * addition to the structural headings. Lives in App state so it persists
@@ -298,9 +300,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteManuscript,
   onReturnToLibrary,
   exportSettings = DEFAULT_EXPORT_SETTINGS,
+  isAiUiHidden,
   aiOutlineMarkdown,
   isAiOutlineLoading,
   onClearAiOutline,
+  onUpdateSynopsis,
   editor,
   characters,
   plotNodes,
@@ -1425,17 +1429,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           </p>
                         </div>
 
-                        <AiSettingsPanel
-                          isDarkMode={isDarkMode}
-                          isAiEnabled={isAiEnabled}
-                          onToggleAiEnabled={onToggleAiEnabled}
-                          aiConfig={aiConfig || null}
-                          onUpdateAiConfig={(next) => onUpdateAiConfig?.(next)}
-                          isAiBubbleMenuEnabled={!!isAiBubbleMenuEnabled}
-                          onToggleAiBubbleMenu={() => onToggleAiBubbleMenu?.()}
-                          serverProviders={serverAiProviders}
-                          onRevalidate={onRevalidateAi}
-                        />
+                        {!isAiUiHidden && (
+                          <AiSettingsPanel
+                            isDarkMode={isDarkMode}
+                            isAiEnabled={isAiEnabled}
+                            onToggleAiEnabled={onToggleAiEnabled}
+                            aiConfig={aiConfig || null}
+                            onUpdateAiConfig={(next) => onUpdateAiConfig?.(next)}
+                            isAiBubbleMenuEnabled={!!isAiBubbleMenuEnabled}
+                            onToggleAiBubbleMenu={() => onToggleAiBubbleMenu?.()}
+                            serverProviders={serverAiProviders}
+                            onRevalidate={onRevalidateAi}
+                          />
+                        )}
 
                         <div className="px-4">
                           <p className="text-[10px] uppercase tracking-widest font-bold opacity-30 mb-3">Manuscript Font</p>
@@ -1461,7 +1467,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </section>
 
                     {/* AI Agent Commands */}
-                    {isAiEnabled && !!aiConfig && (
+                    {!isAiUiHidden && isAiEnabled && !!aiConfig && (
                       <section className="space-y-4">
                         <h3 className="text-[10px] uppercase tracking-[0.2em] font-bold mb-4 opacity-40">AI Agent Commands</h3>
                         <div className="px-4 space-y-4">

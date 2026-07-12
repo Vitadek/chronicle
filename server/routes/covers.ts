@@ -44,12 +44,6 @@ function sniffImage(buf: Buffer): Sniffed | null {
   return null;
 }
 
-function userCoversDir(userId: string): string {
-  // Keep userId out of the join in any user-controlled form; we always
-  // route through the authenticated req.userId so this is server-trusted.
-  return path.join(COVERS_DIR(), userId);
-}
-
 /**
  * Upload. POST body is the raw image bytes; the Content-Type header is
  * advisory only — we sniff magic bytes.

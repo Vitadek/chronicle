@@ -6,6 +6,8 @@ export interface ExternalPluginManifest {
   description: string;
   entry: string; // Path to the compiled JS file relative to plugin folder
   dir: string;   // Directory name on server
+  /** Optional initial plugin state declared in the plugin's manifest.json. */
+  defaultState?: Record<string, unknown>;
 }
 
 export const pluginExternalService = {

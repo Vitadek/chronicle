@@ -2,7 +2,9 @@ import { StorageProvider } from './types';
 import { db } from '../../db';
 
 export class SQLiteProvider implements StorageProvider {
-  async put(key: string, content: Buffer | string): Promise<void> {
+  // contentType accepted to satisfy StorageProvider; SQLite ignores it (the
+  // serve path re-derives mime from the key's extension).
+  async put(key: string, content: Buffer | string, _contentType?: string): Promise<void> {
     const value = typeof content === 'string' ? content : content.toString('base64');
     db.prepare('INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v')
       .run(key, value);

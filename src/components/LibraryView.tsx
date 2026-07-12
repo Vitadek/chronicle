@@ -172,6 +172,8 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
         metadata: {
           id,
           title: title || 'Imported Manuscript',
+          // Imports carry no byline; blank keeps exports from printing "undefined".
+          author: '',
           lastModified: Date.now(),
         },
         chapters: chapters.length > 0 ? chapters : [

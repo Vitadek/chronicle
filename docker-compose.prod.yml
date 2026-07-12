@@ -72,6 +72,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Purist mode — hide all AI features and 403 the AI API (set AI_UI=off in .env):
+      # AI_UI: ${AI_UI:-on}
     depends_on:
       - languagetool
 

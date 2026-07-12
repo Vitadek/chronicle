@@ -99,6 +99,13 @@ export const config = {
   geminiKey: process.env.GEMINI_API_KEY || '',
   /** Default model when the client doesn't specify one. */
   aiModel: process.env.AI_MODEL || 'gpt-4o',
+  /**
+   * AI_UI=off removes every AI surface from the client (settings panels,
+   * toggles, slash commands, bubble menu) — for deployments that want a
+   * purely manual writing tool. Server AI routes stay registered but the
+   * UI never calls them. Default on.
+   */
+  aiUiEnabled: (process.env.AI_UI || 'on').toLowerCase() !== 'off',
   /** OpenAI TTS model + voice for /api/ai/speak. */
   audioModel: process.env.AUDIO_MODEL || 'gpt-4o-mini-tts',
   audioVoice: process.env.AUDIO_VOICE || 'alloy',

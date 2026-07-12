@@ -72,15 +72,84 @@ build any time with:
 docker compose pull && docker compose up -d
 ```
 
-Everything beyond the above is optional — see [`.env.example`](./.env.example)
-for the other auth modes (bearer token / reverse-proxy forward-auth / OIDC), AI
-provider keys, and Nextcloud redundancy, and add whichever you want under
-`environment:`.
+Everything beyond the above is optional — see the reference below and
+[`.env.example`](./.env.example) for the full commented version, and add
+whichever you want under `environment:`.
 
 > **Deploying for real?** See **[DEPLOY.md](./DEPLOY.md)** for a full production
 > stack — Caddy (automatic HTTPS) + Authelia forward-auth + Nextcloud hybrid
 > storage — with ready-to-edit [`docker-compose.prod.yml`](./docker-compose.prod.yml)
 > and [`.env.prod.example`](./.env.prod.example).
+
+## Configuration (environment variables)
+
+Every knob the server reads. All are optional unless noted; defaults shown.
+[`.env.example`](./.env.example) has the same list with longer explanations.
+
+### Core
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PORT` | `3000` | HTTP port |
+| `HOST` | `0.0.0.0` | Bind address |
+| `DATA_DIR` | `./data` | SQLite DB + uploads live here (mount a volume) |
+| `NODE_ENV` | — | `production` in the published image |
+
+### Auth (`AUTH_MODE` — pick one)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `AUTH_MODE` | `none` | `none` \| `token` \| `forward` \| `oidc` |
+| `AUTH_TOKEN` | — | mode `token`: shared bearer token every client sends |
+| `AUTH_FORWARD_HEADER_USER` | `Remote-User` | mode `forward`: identity headers from your proxy |
+| `AUTH_FORWARD_HEADER_EMAIL` | `Remote-Email` | 〃 |
+| `AUTH_FORWARD_HEADER_NAME` | `Remote-Name` | 〃 |
+| `AUTH_FORWARD_HEADER_GROUPS` | `Remote-Groups` | 〃 |
+| `AUTH_FORWARD_TRUSTED_PROXIES` | `loopback,linklocal,uniquelocal` | peers allowed to set those headers (presets or CIDRs) |
+| `AUTH_FORWARD_SECRET_HEADER` / `AUTH_FORWARD_SECRET` | — | optional shared-secret check on top of headers |
+| `AUTH_FORWARD_ADMIN_GROUP` | — | group name that grants admin |
+| `AUTH_OIDC_ISSUER_URL` | — | mode `oidc` (**required**): issuer with discovery |
+| `AUTH_OIDC_CLIENT_ID` / `AUTH_OIDC_CLIENT_SECRET` | — | mode `oidc` (**required**) |
+| `AUTH_OIDC_REDIRECT_URI` | — | e.g. `https://host/api/auth/oidc/callback` |
+| `AUTH_OIDC_SCOPES` | `openid profile email` | |
+| `AUTH_OIDC_POST_LOGOUT_REDIRECT_URI` | — | |
+| `AUTH_OIDC_TOKEN_AUTH_METHOD` | `auto` | `auto` \| `none` \| `client_secret_basic` \| `client_secret_post` |
+
+### Storage
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `STORAGE_PROVIDER` | `sqlite` | `sqlite` (everything local) or `hybrid` (local + Nextcloud redundancy) |
+| `NEXTCLOUD_URL` | — | hybrid (**required**): your Nextcloud base URL |
+| `NC_USER` / `NC_PASS` | — | hybrid (**required**): Nextcloud user + **App Password** |
+| `NC_DIR` | `Chronicle_Storage` | hybrid: remote folder for blobs |
+
+### Nextcloud OAuth mirror (optional, separate from hybrid storage)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `NEXTCLOUD_CLIENT_ID` / `NEXTCLOUD_CLIENT_SECRET` | — | OAuth app credentials |
+| `NEXTCLOUD_REDIRECT_URI` | — | e.g. `https://host/api/auth/nextcloud/callback` |
+| `NEXTCLOUD_MIRROR` | `false` | write-behind readable copies of manuscripts |
+| `NEXTCLOUD_MIRROR_ROOT` | `Chronicle` | remote folder for the mirror |
+
+### AI (optional — keys stay server-side, never in the browser)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | — | set any subset; only configured providers are offered in the UI |
+| `AI_MODEL` | `gpt-4o` | default text model when the client doesn't pick one |
+| `AUDIO_MODEL` | `gpt-4o-mini-tts` | OpenAI TTS for `#!/ai_listen` |
+| `AUDIO_VOICE` | `alloy` | TTS voice |
+| `AI_UI` | `on` | **`off` removes every AI surface from the app** (settings panels, toggles, `#!/ai_*` commands, bubble menu) *and* the server refuses AI API calls with 403 — for purely manual writing setups |
+
+### Grammar (optional LanguageTool sidecar)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `LANGUAGETOOL_URL` | `http://languagetool:8010` | LanguageTool server for grammar checking |
+| `LANGUAGETOOL_LANG` | `en-US` | check language |
+| `GRAMMAR_AI_MODEL` | `gemini-2.5-flash` | model for AI-assisted grammar suggestions |
 
 ### Build from source instead
 

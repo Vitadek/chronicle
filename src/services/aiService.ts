@@ -23,6 +23,11 @@ export interface AiServerConfig {
   defaultModel: string;
   audioModel: string;
   audioVoice: string;
+  /**
+   * Server-side kill switch (AI_UI=off): when false, the client renders no
+   * AI surfaces at all. Optional so older servers (no field) default to on.
+   */
+  uiEnabled?: boolean;
 }
 
 /**

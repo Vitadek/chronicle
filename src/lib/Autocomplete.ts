@@ -91,7 +91,21 @@ export const Autocomplete = Extension.create<AutocompleteOptions>({
             }
 
             const { $from } = selection;
-            
+
+            // Only suggest at the END of a word. If the caret sits inside a
+            // word (clicked or arrowed into "for|est"), the next character is
+            // a word character \u2014 suggesting there is noise, not help.
+            const nextChar = $from.parent.textBetween(
+              $from.parentOffset,
+              Math.min($from.parentOffset + 1, $from.parent.content.size),
+              undefined,
+              '\ufffc'
+            );
+            if (/^\w/.test(nextChar)) {
+              this.storage.suggestion = '';
+              return DecorationSet.empty;
+            }
+
             // Get the current line text
             const textBefore = $from.parent.textBetween(
               0,

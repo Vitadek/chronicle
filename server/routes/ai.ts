@@ -71,7 +71,23 @@ router.get('/config', (_req, res) => {
     defaultModel: config.aiModel,
     audioModel: config.audioModel,
     audioVoice: config.audioVoice,
+    // AI_UI=off hides every AI surface client-side (see config.aiUiEnabled).
+    uiEnabled: config.aiUiEnabled,
   });
+});
+
+/**
+ * AI_UI=off gate. Hiding the UI alone would leave these routes callable by
+ * a stale tab or a hand-crafted request — spending the server-held provider
+ * keys on a deployment that opted out of AI. GET /config stays reachable
+ * above so clients can learn the flag; everything else is refused.
+ */
+router.use((_req, res, next) => {
+  if (!config.aiUiEnabled) {
+    res.status(403).json({ error: 'AI is disabled on this server (AI_UI=off)' });
+    return;
+  }
+  next();
 });
 
 /**

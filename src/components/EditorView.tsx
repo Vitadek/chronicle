@@ -110,7 +110,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [commentingAt, setCommentingAt] = useState<{ from: number; to: number; text: string } | null>(null);
   const [commentDraft, setCommentDraft] = useState('');
 
-  const { getPluginContext, enabledPlugins } = usePlugins();
+  const { getPluginContext, enabledPlugins, allPlugins } = usePlugins();
 
   // Listen for double-clicks on comment markers (dispatched from src/lib/Comment.ts)
   useEffect(() => {
@@ -398,19 +398,96 @@ export const EditorView: React.FC<EditorViewProps> = ({
     }
   };
 
-  // The CommandPortal closure is created once when the editor mounts and
-  // captured inside the CommandLine extension. We can't rebuild extensions
-  // on toggle (TipTap doesn't reload them), so we read isAiEnabled from a
-  // ref that's always current.
-  const isAiEnabledRef = useRef(isAiEnabled);
+  // The CommandPortal closures are created once when the editor mounts and
+  // captured inside the CommandLine extension (the useMemo(..., []) below).
+  // We can't rebuild extensions on toggle (TipTap doesn't reload them), so
+  // every value a slash command needs at invoke time is read through this
+  // ref, which mirrors the latest render. Note the effect has NO deps array:
+  // handleAiAction is recreated each render (closing over fresh
+  // isAiEnabled/aiConfig), so the mirror must refresh every render too —
+  // otherwise typed #!/ai_* commands would bypass the AI kill switch, and
+  // manuscriptId could go stale across title-page → title-page switches
+  // (both manuscripts share the 'title-page' chapter key, so no remount).
+  const liveRef = useRef({
+    isAiEnabled,
+    manuscriptId,
+    aiConfig: aiConfig ?? null,
+    handleAiAction,
+    getPluginContext,
+    enabledPlugins,
+    allPlugins,
+  });
   useEffect(() => {
-    isAiEnabledRef.current = isAiEnabled;
-  }, [isAiEnabled]);
+    liveRef.current = {
+      isAiEnabled,
+      manuscriptId,
+      aiConfig: aiConfig ?? null,
+      handleAiAction,
+      getPluginContext,
+      enabledPlugins,
+      allPlugins,
+    };
+  });
 
   const commandLineOptions = useMemo(() => ({
     render: () => {
       let component: any;
       let popup: any;
+
+      // Single dispatch handler shared by onStart and onUpdate — these
+      // previously carried two hand-synced copies of this whole block.
+      const makeCommand = (props: any) => async ({ command, args }: { command: string, args: string[] }) => {
+        const { editor, range } = props;
+        const live = liveRef.current;
+
+        // Check for Plugin Commands first
+        for (const pluginId of Array.from(live.enabledPlugins)) {
+          const manifest = live.allPlugins.find(p => p.id === pluginId);
+          if (manifest?.portalCommands?.[command]) {
+            popup[0].hide();
+            editor.commands.deleteRange(range);
+            const context = live.getPluginContext(pluginId, editor, live.manuscriptId, live.aiConfig);
+            await manifest.portalCommands[command](context, args);
+            return;
+          }
+        }
+
+        if (command === 'comment') {
+          // Hide popup immediately
+          popup[0].hide();
+
+          // Get paragraph content before clearing the command
+          const { $from } = editor.state.selection;
+          // We extract the current selection's parent text
+          const rawText = $from.parent.textContent;
+          // Clean #!/comment or #!command from the reference text
+          const parentContent = rawText.replace(/#!(\/)?comment/gi, '').trim();
+
+          // The range for the comment is the whole parent block minus the command
+          const from = $from.start();
+          const to = $from.end();
+
+          // Clean up the command characters in the editor
+          editor.commands.deleteRange(range);
+
+          // Open commentary UI
+          setCommentingAt({ from, to, text: parentContent || "this paragraph" });
+          setCommentDraft('');
+        } else if (command === 'epigraph') {
+          popup[0].hide();
+          editor.chain()
+            .focus()
+            .deleteRange(range)
+            .setEpigraph()
+            .run();
+        } else if (command.startsWith('ai_')) {
+          popup[0].hide();
+          editor.commands.deleteRange(range);
+          // Latest instance via the ref — sees current isAiEnabled/aiConfig,
+          // so the kill switch and settings edits apply to typed commands.
+          live.handleAiAction(command);
+        }
+      };
 
       return {
         onStart: (props: any) => {
@@ -418,56 +495,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
             props: {
               ...props,
               // Read live so toggling AI off/on takes effect immediately.
-              isAiEnabled: isAiEnabledRef.current,
-              command: async ({ command, args }: { command: string, args: string[] }) => {
-                const { editor, range } = props;
-
-                // Check for Plugin Commands first
-                for (const pluginId of Array.from(enabledPlugins)) {
-                  const manifest = PLUGIN_REGISTRY.find(p => p.id === pluginId);
-                  if (manifest?.portalCommands?.[command]) {
-                    popup[0].hide();
-                    editor.commands.deleteRange(range);
-                    const context = getPluginContext(pluginId, editor, manuscriptId);
-                    await manifest.portalCommands[command](context, args);
-                    return;
-                  }
-                }
-
-                if (command === 'comment') {
-                  // Hide popup immediately
-                  popup[0].hide();
-
-                  // Get paragraph content before clearing the command
-                  const { $from } = editor.state.selection;
-                  // We extract the current selection's parent text
-                  const rawText = $from.parent.textContent;
-                  // Clean #!/comment or #!command from the reference text
-                  const parentContent = rawText.replace(/#!(\/)?comment/gi, '').trim();
-
-                  // The range for the comment is the whole parent block minus the command
-                  const from = $from.start();
-                  const to = $from.end();
-
-                  // Clean up the command characters in the editor
-                  editor.commands.deleteRange(range);
-
-                  // Open commentary UI
-                  setCommentingAt({ from, to, text: parentContent || "this paragraph" });
-                  setCommentDraft('');
-                } else if (command === 'epigraph') {
-                  popup[0].hide();
-                  editor.chain()
-                    .focus()
-                    .deleteRange(range)
-                    .setEpigraph()
-                    .run();
-                } else if (command.startsWith('ai_')) {
-                  popup[0].hide();
-                  editor.commands.deleteRange(range);
-                  handleAiAction(command);
-                }
-              }
+              isAiEnabled: liveRef.current.isAiEnabled,
+              command: makeCommand(props),
             },
             editor: props.editor,
           });
@@ -486,47 +515,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
         onUpdate(props: any) {
           component.updateProps({
             ...props,
-            isAiEnabled: isAiEnabledRef.current,
-            command: async ({ command, args }: { command: string, args: string[] }) => {
-              const { editor, range } = props;
-
-              // Check for Plugin Commands first
-              for (const pluginId of Array.from(enabledPlugins)) {
-                const manifest = PLUGIN_REGISTRY.find(p => p.id === pluginId);
-                if (manifest?.portalCommands?.[command]) {
-                  popup[0].hide();
-                  editor.commands.deleteRange(range);
-                  const context = getPluginContext(pluginId, editor, manuscriptId);
-                  await manifest.portalCommands[command](context, args);
-                  return;
-                }
-              }
-
-              if (command === 'comment') {
-                popup[0].hide();
-
-                const { $from } = editor.state.selection;
-                const rawText = $from.parent.textContent;
-                const parentContent = rawText.replace(/#!(\/)?comment/gi, '').trim();
-                const from = $from.start();
-                const to = $from.end();
-
-                editor.commands.deleteRange(range);
-                setCommentingAt({ from, to, text: parentContent || "this paragraph" });
-                setCommentDraft('');
-              } else if (command === 'epigraph') {
-                popup[0].hide();
-                editor.chain()
-                  .focus()
-                  .deleteRange(range)
-                  .setEpigraph()
-                  .run();
-              } else if (command.startsWith('ai_')) {
-                popup[0].hide();
-                editor.commands.deleteRange(range);
-                handleAiAction(command);
-              }
-            }
+            isAiEnabled: liveRef.current.isAiEnabled,
+            command: makeCommand(props),
           });
           popup[0].setProps({
             getReferenceClientRect: props.clientRect,
