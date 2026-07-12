@@ -141,7 +141,7 @@ Every knob the server reads. All are optional unless noted; defaults shown.
 | `AI_MODEL` | `gpt-4o` | default text model when the client doesn't pick one |
 | `AUDIO_MODEL` | `gpt-4o-mini-tts` | OpenAI TTS for `#!/ai_listen` |
 | `AUDIO_VOICE` | `alloy` | TTS voice |
-| `AI_UI` | `on` | **`off` removes every AI surface from the app** (settings panels, toggles, `#!/ai_*` commands, bubble menu) *and* the server refuses AI API calls with 403 — for purely manual writing setups |
+| `AI_UI` | `on` | **`off` (or `false`/`0`/`no`) removes every AI surface from the app** (settings panels, toggles, `#!/ai_*` commands, bubble menu) *and* the server refuses AI API calls with 403 — for purely manual writing setups. Anything else (or unset) keeps AI on |
 
 ### Grammar (optional LanguageTool sidecar)
 
