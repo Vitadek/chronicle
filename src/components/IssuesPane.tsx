@@ -3,7 +3,7 @@ import { Clock, SpellCheck, CheckCircle2, Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
 import type { TenseShiftHit } from '../lib/TenseShift';
 import type { GrammarMark } from '../lib/Grammar';
-import { buildPosMap } from '../lib/proseMirrorText';
+import { locateQuote } from '../lib/proseMirrorText';
 import { aiGrammarPass } from '../services/grammarAiService';
 
 interface IssuesPaneProps {
@@ -32,26 +32,6 @@ interface Row {
   kind: string;
   label: string;
   text: string;
-}
-
-/** Find the first occurrence of `quote` in the editor and return its doc span. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function locateQuote(editor: any, quote: string): { from: number; to: number } | null {
-  if (!quote) return null;
-  let hit: { from: number; to: number } | null = null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  editor.state.doc.descendants((node: any, pos: number) => {
-    if (hit || !node.isTextblock) return hit ? false : undefined;
-    const { text, posAt } = buildPosMap(node, pos + 1);
-    const idx = text.indexOf(quote);
-    if (idx >= 0) {
-      const endIdx = Math.min(idx + quote.length, posAt.length - 1);
-      hit = { from: posAt[idx], to: posAt[endIdx] };
-      return false;
-    }
-    return undefined;
-  });
-  return hit;
 }
 
 /**

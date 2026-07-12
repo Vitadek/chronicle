@@ -12,6 +12,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorState } from '@tiptap/pm/state';
 import { buildPosMap } from './proseMirrorText';
 import { lintText, loadGrammarEngine, type GrammarHit } from './grammar/languagetool';
+import { getDictionary } from './dictionary';
 
 export interface GrammarMark {
   from: number;
@@ -19,6 +20,8 @@ export interface GrammarMark {
   kind: string;
   message: string;
   text: string;
+  /** Dictionary correction candidates (misspellings only). */
+  replacements?: string[];
 }
 
 export interface GrammarOptions {
@@ -26,8 +29,12 @@ export interface GrammarOptions {
   debounceMs: number;
   /** Skip paragraphs shorter than this many characters. */
   minChars: number;
-  /** Called with the full set of marks after each recompute. */
-  onMarks?: (marks: GrammarMark[]) => void;
+  /**
+   * Called with the full set of marks after each recompute ('lint'), and with
+   * an empty set when the checker is switched off ('cleared'). Consumers that
+   * show "checking…" states must not treat 'cleared' as a finished lint.
+   */
+  onMarks?: (marks: GrammarMark[], reason?: 'lint' | 'cleared') => void;
 }
 
 declare module '@tiptap/core' {
@@ -75,16 +82,38 @@ async function compute(
 
   const decos: Decoration[] = [];
   const marks: GrammarMark[] = [];
-  for (const p of paras) {
-    const lints = await lintCached(p.text);
+  // Words the user added to their custom dictionary (proper nouns,
+  // worldbuilding terms) are never flagged as misspellings — here in the
+  // normal editor and in the Proofread view alike.
+  const dictionary = getDictionary();
+  // Lint paragraphs with a small concurrency pool instead of one-at-a-time:
+  // a long chapter is dozens of round-trips to LanguageTool, and running them
+  // serially made a full-chapter check take ~10s. Order is preserved by
+  // writing results into a fixed-size array.
+  const CONCURRENCY = 4;
+  const lintResults: GrammarHit[][] = new Array(paras.length);
+  let nextIdx = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, paras.length) }, async () => {
+      while (nextIdx < paras.length) {
+        const i = nextIdx++;
+        lintResults[i] = await lintCached(paras[i].text);
+      }
+    }),
+  );
+  for (let i = 0; i < paras.length; i++) {
+    const p = paras[i];
+    const lints = lintResults[i] ?? [];
     for (const ln of lints) {
+      const flagged = p.text.slice(ln.start, ln.end);
+      if (ln.kind === 'misspelling' && dictionary.has(flagged.trim().toLowerCase())) continue;
       const from = p.posAt[ln.start];
       const to = p.posAt[Math.min(ln.end, p.posAt.length - 1)];
       if (from == null || to == null || to <= from) continue;
       decos.push(
         Decoration.inline(from, to, { class: classFor(ln.kind), title: ln.message }, { kind: ln.kind }),
       );
-      marks.push({ from, to, kind: ln.kind, message: ln.message, text: p.text.slice(ln.start, ln.end) });
+      marks.push({ from, to, kind: ln.kind, message: ln.message, text: flagged, replacements: ln.replacements });
     }
   }
 
@@ -159,7 +188,7 @@ export const Grammar = Extension.create<GrammarOptions>({
               // drop this stale result — a newer pass is already scheduled.
               if (view.isDestroyed || view.state.doc !== docBefore) return;
               ext.storage.marks = marks;
-              ext.options.onMarks?.(marks);
+              ext.options.onMarks?.(marks, 'lint');
               view.dispatch(view.state.tr.setMeta(grammarKey, decorations));
             }, ext.options.debounceMs);
           };
@@ -168,7 +197,7 @@ export const Grammar = Extension.create<GrammarOptions>({
             if (timer) clearTimeout(timer);
             timer = null;
             ext.storage.marks = [];
-            ext.options.onMarks?.([]);
+            ext.options.onMarks?.([], 'cleared');
             view.dispatch(view.state.tr.setMeta(grammarKey, DecorationSet.empty));
           };
 

@@ -46,6 +46,8 @@ export const SYNCED_SETTINGS_KEYS = [
   'chronicle_export_settings',
   'chronicle_import_help_hidden',
   'chronicle_user_profile',
+  'chronicle_dictionary',
+  'chronicle_proofread_list',
 ] as const;
 
 let hydrated = false;

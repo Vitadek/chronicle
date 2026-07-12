@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Book, Plus, Trash2, Clock, BookOpen, User, X, Settings, Upload } from 'lucide-react';
+import { Book, Plus, Trash2, Clock, BookOpen, User, X, Settings, Upload, SpellCheck } from 'lucide-react';
 import { ManuscriptMetadata, Manuscript } from '../types';
 import { manuscriptService } from '../services/manuscriptService';
 import { loadCoverBlobUrl } from '../services/coverService';
@@ -14,6 +14,8 @@ interface LibraryViewProps {
   /** Persist an imported manuscript (server create). Must throw on failure so
    *  the import dialog can show the error instead of a silent success. */
   onImportManuscript: (manuscript: Manuscript) => Promise<void> | void;
+  /** Open the manuscript in Proofread mode (guided spelling/grammar/clarity pass). */
+  onProofreadManuscript: (id: string) => void;
   onOpenSettings: () => void;
   isDarkMode: boolean;
   /** Bumped by the parent when remote sync has new data. Triggers a refetch. */
@@ -54,7 +56,7 @@ function CoverThumb({ filename, className }: { filename?: string; className?: st
   );
 }
 
-export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscript, onOpenSettings, isDarkMode, refreshSignal }: LibraryViewProps) {
+export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscript, onProofreadManuscript, onOpenSettings, isDarkMode, refreshSignal }: LibraryViewProps) {
   const [manuscripts, setManuscripts] = useState<ManuscriptMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -216,16 +218,29 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
                           </button>
                         </div>
                       ) : (
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmDeleteId(m.id);
-                          }}
-                          className="p-2 opacity-40 hover:opacity-100 hover:text-red-500 transition-all"
-                          aria-label="Delete manuscript"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                        </button>
+                        <div className="flex items-center">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onProofreadManuscript(m.id);
+                            }}
+                            className="p-2 opacity-40 hover:opacity-100 hover:text-blue-500 transition-all"
+                            aria-label="Proofread manuscript"
+                            title="Proofread — guided spelling, grammar & clarity pass"
+                          >
+                            <SpellCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeleteId(m.id);
+                            }}
+                            className="p-2 opacity-40 hover:opacity-100 hover:text-red-500 transition-all"
+                            aria-label="Delete manuscript"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                          </button>
+                        </div>
                       )}
                     </div>
 

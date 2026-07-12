@@ -322,6 +322,96 @@ router.post('/grammar', async (req, res) => {
   }
 });
 
+/**
+ * AI clarity pass (Proofread view). Flags passages that may read unclear,
+ * clunky, or ambiguous — OBSERVATION ONLY. The response schema deliberately
+ * has no `suggestion` field and the prompt forbids rewrites: Chronicle's AI
+ * describes, it never writes for the author.
+ */
+const ClarityAiBody = z.object({ text: z.string().min(1).max(20000) });
+
+router.post('/clarity', async (req, res) => {
+  const parsed = ClarityAiBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: { message: 'text required' } });
+    return;
+  }
+  const apiKey = config.geminiKey;
+  if (!apiKey) {
+    res.status(503).json({ error: { message: 'Gemini key not configured (GEMINI_API_KEY).' } });
+    return;
+  }
+  const model = process.env.GRAMMAR_AI_MODEL || 'gemini-2.5-flash';
+  const system = [
+    'You are a careful first reader of prose fiction.',
+    'FIRST, read the entire passage and internalize the author\'s style: their sentence rhythm,',
+    'diction register, pacing, and deliberate quirks. That style is the baseline — judge every',
+    'sentence against the author\'s own voice, not against generic writing rules.',
+    'THEN flag only passages a reasonable reader would stumble on RELATIVE TO that baseline:',
+    'sentences that are hard to parse, ambiguous pronoun references, tangled or overlong',
+    'constructions the surrounding prose doesn\'t support, unclear who-is-doing-what,',
+    'jarring register shifts that don\'t read intentional, or wording clunky enough to pull',
+    'the reader out of the story.',
+    'For each, quote the smallest exact substring of the text that contains the problem, and in',
+    'the message explain WHY it may read unclear — name the confusion a reader would feel, and',
+    'where relevant, relate it to the surrounding prose (e.g. "the paragraph\'s short, clipped',
+    'sentences make this 40-word chain hard to track").',
+    'NEVER include a rewrite, corrected version, replacement wording, or any suggested text.',
+    'The message must describe the problem only; the author does the writing.',
+    'DO NOT flag deliberate style: fragments for effect, dialogue voice, rhythm choices,',
+    'or anything a literary author would defend. When unsure, do not flag.',
+  ].join(' ');
+  const responseSchema = {
+    type: 'array',
+    items: {
+      type: 'object',
+      properties: {
+        quote: { type: 'string' },
+        message: { type: 'string' },
+      },
+      required: ['quote', 'message'],
+    },
+  };
+  try {
+    const gBody = {
+      contents: [{ role: 'user', parts: [{ text: parsed.data.text }] }],
+      systemInstruction: { parts: [{ text: system }] },
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema,
+        maxOutputTokens: 4096,
+      },
+    };
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const upstream = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(gBody),
+    });
+    const data = await upstream.json();
+    if (!upstream.ok) {
+      res.status(upstream.status).json({ error: { message: data?.error?.message || `Gemini error ${upstream.status}` } });
+      return;
+    }
+    const raw: string = Array.isArray(data?.candidates?.[0]?.content?.parts)
+      ? data.candidates[0].content.parts.map((p: { text?: string }) => p?.text || '').join('')
+      : '';
+    let issues: { quote: string; message: string }[] = [];
+    try {
+      const j = JSON.parse(raw);
+      if (Array.isArray(j)) issues = j.filter((x) => x && typeof x.quote === 'string' && typeof x.message === 'string');
+    } catch {
+      /* model returned non-JSON; treat as no issues */
+    }
+    // Belt and braces on the no-rewrite rule: strip any field beyond
+    // quote/message that a creative model might sneak in.
+    res.json({ issues: issues.slice(0, 100).map(({ quote, message }) => ({ quote, message })) });
+  } catch (err) {
+    console.error('AI clarity pass failed:', err);
+    res.status(500).json({ error: { message: 'AI clarity pass failed' } });
+  }
+});
+
 /** Text-to-speech. OpenAI only. */
 const TtsBody = z.object({
   model: z.string().min(1).max(120).optional(),

@@ -18,6 +18,7 @@ interface LtMatch {
   length: number;
   message: string;
   rule?: { issueType?: string; category?: { id?: string } };
+  replacements?: { value: string }[];
 }
 
 router.post('/check', async (req, res) => {
@@ -46,6 +47,9 @@ router.post('/check', async (req, res) => {
       // issueType: misspelling | grammar | typographical | style | ...
       kind: m.rule?.issueType || m.rule?.category?.id || 'grammar',
       message: m.message,
+      // Dictionary corrections (capped — LT can return dozens for a bad typo).
+      // The Proofread view renders these as one-click spelling fixes.
+      replacements: (m.replacements ?? []).slice(0, 5).map((r) => r.value),
     }));
     res.json({ hits });
   } catch {

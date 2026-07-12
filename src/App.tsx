@@ -26,6 +26,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Chapter, ManuscriptMetadata, UserProfile, Manuscript, Character, PlotNode, PlotEdge, ExportSettings, DEFAULT_EXPORT_SETTINGS } from './types';
 import { countWords } from './lib/wordCount';
 import { scheduleSettingsPush } from './lib/settingsSync';
+import { ProofreadView } from './components/ProofreadView';
 import type { Editor } from '@tiptap/react';
 
 export default function App() {
@@ -213,6 +214,11 @@ export default function App() {
 
   // Global settings visibility
   const [isGlobalSettingsOpen, setIsGlobalSettingsOpen] = useState(false);
+
+  // Proofread mode: the guided revision pass opened from a library card's
+  // spell-check icon. When true, the open manuscript renders in ProofreadView
+  // instead of the normal Sidebar+EditorView.
+  const [isProofreadMode, setIsProofreadMode] = useState(false);
 
   // Signal that bumps whenever a remote sync delivers fresh data. The
   // LibraryView watches this to reload its manuscript list, and the editor
@@ -685,6 +691,10 @@ export default function App() {
           onSelectManuscript={setCurrentManuscriptId}
           onCreateNew={handleCreateNew}
           onImportManuscript={handleImportManuscript}
+          onProofreadManuscript={(id) => {
+            setIsProofreadMode(true);
+            setCurrentManuscriptId(id);
+          }}
           onOpenSettings={() => setIsGlobalSettingsOpen(true)}
           isDarkMode={isDarkMode}
           refreshSignal={remoteRevision}
@@ -693,8 +703,31 @@ export default function App() {
     );
   }
 
+  // Proofread mode replaces the whole editor shell: the guided revision pass
+  // owns its own editor instance per chapter. Edits flow into `chapters`
+  // state, so the existing debounced autosave persists them like any edit.
+  if (isProofreadMode) {
+    return (
+      <PluginProvider syncSignal={remoteRevision} aiConfig={aiConfig}>
+        <ProofreadView
+          metadata={metadata}
+          chapters={chapters}
+          isDarkMode={isDarkMode}
+          aiAvailable={isAiEnabled && !!aiConfig && !isAiUiHidden}
+          onUpdateChapter={(chapterId, content) => {
+            setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, content, lastModified: Date.now() } : c));
+          }}
+          onExit={() => {
+            setIsProofreadMode(false);
+            setCurrentManuscriptId(null);
+          }}
+        />
+      </PluginProvider>
+    );
+  }
+
   const isTitlePage = currentChapterId === 'title-page';
-  const currentChapter = isTitlePage 
+  const currentChapter = isTitlePage
     ? { id: 'title-page', title: metadata.title, content: metadata.author, lastModified: metadata.lastModified }
     : (chapters.find(c => c.id === currentChapterId) || chapters[0]);
 

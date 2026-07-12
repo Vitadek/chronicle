@@ -7,6 +7,7 @@ import { CommandLine } from '../lib/CommandLine';
 import { TenseShift, type TenseShiftHit } from '../lib/TenseShift';
 import { Grammar, type GrammarMark } from '../lib/Grammar';
 import { AiGrammar } from '../lib/AiGrammar';
+import { ProofreadHighlight } from '../lib/ProofreadHighlight';
 import { buildCoreExtensions, EDITOR_KEYBOARD_ATTRS } from '../lib/editorExtensions';
 
 export interface UseChronicleEditorProps {
@@ -27,8 +28,9 @@ export interface UseChronicleEditorProps {
   onTenseShifts?: (hits: TenseShiftHit[]) => void;
   /** Live grammar/style squiggles via the server LanguageTool proxy (lib/Grammar.ts). */
   isGrammarCheckEnabled?: boolean;
-  /** Receives the current set of grammar marks after each recompute. */
-  onGrammarMarks?: (marks: GrammarMark[]) => void;
+  /** Receives the current marks after each recompute ('lint') or when the
+   *  checker is switched off ('cleared') — see GrammarOptions.onMarks. */
+  onGrammarMarks?: (marks: GrammarMark[], reason?: 'lint' | 'cleared') => void;
   /** Deterministic autocorrect + sentence-start capitalization (lib/AutoCorrect.ts). */
   isAutoCorrectEnabled?: boolean;
 }
@@ -70,9 +72,10 @@ export function useChronicleEditor({
     }),
     Grammar.configure({
       enabled: false, // toggled at runtime via the effect below
-      onMarks: (marks) => onGrammarMarksRef.current?.(marks),
+      onMarks: (marks, reason) => onGrammarMarksRef.current?.(marks, reason),
     }),
     AiGrammar, // on-demand pass; marks set imperatively from the Issues panel
+    ProofreadHighlight, // current-issue emphasis in Proofread mode; no-op elsewhere
     Autocomplete,
     CommandLine.configure({
       suggestion: {

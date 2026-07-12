@@ -15,6 +15,8 @@ export interface GrammarHit {
   /** LanguageTool issue type: misspelling | grammar | typographical | style | … */
   kind: string;
   message: string;
+  /** Dictionary correction candidates (misspellings), capped server-side. */
+  replacements?: string[];
 }
 
 let endpointBase = '';
