@@ -1,18 +1,19 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Book, Plus, Trash2, Clock, BookOpen, User, X, Settings, Upload, Loader2 } from 'lucide-react';
+import { Book, Plus, Trash2, Clock, BookOpen, User, X, Settings, Upload } from 'lucide-react';
 import { ManuscriptMetadata, Manuscript } from '../types';
 import { manuscriptService } from '../services/manuscriptService';
 import { loadCoverBlobUrl } from '../services/coverService';
 import { cn } from '../lib/utils';
 import { formatWordCount } from '../lib/wordCount';
-// mammoth (.docx import, ~2 MB source) is dynamic-imported in the file
-// handler so it doesn't weigh down the main bundle for everyone.
+import { ImportDialog } from './ImportDialog';
 
 interface LibraryViewProps {
   onSelectManuscript: (id: string) => void;
   onCreateNew: () => void;
-  onImportManuscript: (manuscript: Manuscript) => void;
+  /** Persist an imported manuscript (server create). Must throw on failure so
+   *  the import dialog can show the error instead of a silent success. */
+  onImportManuscript: (manuscript: Manuscript) => Promise<void> | void;
   onOpenSettings: () => void;
   isDarkMode: boolean;
   /** Bumped by the parent when remote sync has new data. Triggers a refetch. */
@@ -56,8 +57,7 @@ function CoverThumb({ filename, className }: { filename?: string; className?: st
 export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscript, onOpenSettings, isDarkMode, refreshSignal }: LibraryViewProps) {
   const [manuscripts, setManuscripts] = useState<ManuscriptMetadata[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isImporting, setIsImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   // Two-step delete confirmation. The native confirm() dialog feels jarring
   // against this UI, and on touch devices an opacity-0 hover-only trash icon
   // is functionally invisible.
@@ -90,114 +90,14 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
     }
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsImporting(true);
-    try {
-      const [{ default: mammoth }, arrayBuffer] = await Promise.all([
-        import('mammoth'),
-        file.arrayBuffer(),
-      ]);
-      const result = await mammoth.convertToHtml({ arrayBuffer });
-      
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(result.value, 'text/html');
-      const children = Array.from(doc.body.children);
-      
-      const chapters: any[] = [];
-      let currentChapter: any = null;
-      let isSkippingHeader = true;
-
-      children.forEach((child) => {
-        const tag = child.tagName.toLowerCase();
-        const isHeading = ['h1', 'h2', 'h3'].includes(tag);
-        const text = child.textContent?.trim() || '';
-
-        // If we haven't hit a heading yet, we check if we should skip this paragraph
-        // because it looks like contact info (Author, Address, Phone, Email).
-        if (isSkippingHeader && !isHeading && tag === 'p') {
-          const isEmail = /\S+@\S+\.\S+/.test(text);
-          const isPhone = /^[\d\s-().+]{7,}$/.test(text) && /[0-9]/.test(text);
-          const isMetadata = text.toLowerCase().startsWith('word count') || 
-                             text.toLowerCase().startsWith('approx');
-
-          if (isEmail || isPhone || isMetadata || (text.length < 40 && !currentChapter)) {
-            return;
-          }
-          isSkippingHeader = false;
-        }
-
-        if (isHeading || !currentChapter) {
-          isSkippingHeader = false;
-
-          // DE-DUPLICATION LOGIC:
-          // If we have a current chapter with NO content yet (meaning we just hit 
-          // a heading), and we hit ANOTHER heading immediately, we resolve 
-          // which title to keep rather than splitting again.
-          if (isHeading && currentChapter && currentChapter.content === '') {
-            const isPrevGeneric = /^(chapter|ch\.|sect\.|section)\s*\d+\s*$/i.test(currentChapter.title);
-            const isNewGeneric = /^(chapter|ch\.|sect\.|section)\s*\d+\s*$/i.test(text);
-
-            if (isPrevGeneric && !isNewGeneric) {
-              // Current title is "Chapter 1", new one is "Descriptive Name".
-              // Use the descriptive name.
-              currentChapter.title = text;
-              return;
-            } else if (!isPrevGeneric && isNewGeneric) {
-              // Current title is already descriptive, new one is just "Chapter 1".
-              // Ignore the generic one.
-              return;
-            }
-            // If both are generic or both descriptive, we treat it as a deliberate split
-            // and fall through to create a new chapter.
-          }
-          
-          // Start a new chapter
-          currentChapter = {
-            id: Math.random().toString(36).substr(2, 9),
-            title: isHeading ? text || 'Untitled Chapter' : 'Prologue',
-            content: '',
-            lastModified: Date.now(),
-          };
-          chapters.push(currentChapter);
-          
-          if (isHeading) return;
-        }
-
-        currentChapter.content += child.outerHTML;
-      });
-
-      const id = Math.random().toString(36).substr(2, 9);
-      const title = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, ' ');
-      
-      const manuscript: Manuscript = {
-        metadata: {
-          id,
-          title: title || 'Imported Manuscript',
-          // Imports carry no byline; blank keeps exports from printing "undefined".
-          author: '',
-          lastModified: Date.now(),
-        },
-        chapters: chapters.length > 0 ? chapters : [
-          {
-            id: '1',
-            title: 'Full Manuscript',
-            content: result.value,
-            lastModified: Date.now(),
-          }
-        ]
-      };
-
-      onImportManuscript(manuscript);
-    } catch (error) {
-      console.error('Import failed:', error);
-      alert('Failed to import .docx file. Please ensure it is a valid Word document.');
-    } finally {
-      setIsImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+  /**
+   * Persist an imported manuscript (parsing happened in the dialog via
+   * src/lib/importService.ts), then refresh the shelf so it appears behind
+   * the dialog's success screen. Rethrows so the dialog can show failures.
+   */
+  const handleImported = async (manuscript: Manuscript) => {
+    await onImportManuscript(manuscript);
+    await loadLibrary();
   };
 
   return (
@@ -228,22 +128,14 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
               <Settings className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
 
-            <input 
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept=".docx"
-              className="hidden"
-            />
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isImporting}
+            <button
+              onClick={() => setShowImportDialog(true)}
               className={cn(
-                "flex flex-1 sm:flex-none items-center justify-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl transition-all border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50",
+                "flex flex-1 sm:flex-none items-center justify-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl transition-all border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5",
                 isDarkMode ? "text-[#F1EDE4]" : "text-black"
               )}
             >
-              {isImporting ? <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" /> : <Upload className="w-4 h-4 sm:w-5 sm:h-5" />}
+              <Upload className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="text-[10px] sm:text-xs uppercase tracking-widest font-bold">Import</span>
             </button>
 
@@ -367,6 +259,14 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
       <div className="fixed inset-0 pointer-events-none opacity-[0.03] dark:opacity-[0.05] z-[-1]">
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/natural-paper.png')]" />
       </div>
+
+      <ImportDialog
+        isOpen={showImportDialog}
+        onClose={() => setShowImportDialog(false)}
+        isDarkMode={isDarkMode}
+        onImportManuscript={handleImported}
+        onOpenManuscript={onSelectManuscript}
+      />
     </div>
   );
 }

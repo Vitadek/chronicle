@@ -510,13 +510,10 @@ export default function App() {
       manuscript.metadata.author = userProfile.name || 'Uncredited Author';
     }
 
-    try {
-      await manuscriptService.create(manuscript);
-      setCurrentManuscriptId(manuscript.metadata.id);
-    } catch (error) {
-      console.error(error);
-      alert('Failed to import manuscript');
-    }
+    // Persist only — the import dialog owns the success/failure UI and lets
+    // the user choose whether to open the manuscript, so no navigation here.
+    // Errors propagate to the dialog's failure view.
+    await manuscriptService.create(manuscript);
   };
 
   const handleUpdateChapterContent = useCallback((title: string, content: string) => {
