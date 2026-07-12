@@ -6,7 +6,8 @@ import { manuscriptService } from '../services/manuscriptService';
 import { loadCoverBlobUrl } from '../services/coverService';
 import { cn } from '../lib/utils';
 import { formatWordCount } from '../lib/wordCount';
-import mammoth from 'mammoth';
+// mammoth (.docx import, ~2 MB source) is dynamic-imported in the file
+// handler so it doesn't weigh down the main bundle for everyone.
 
 interface LibraryViewProps {
   onSelectManuscript: (id: string) => void;
@@ -95,7 +96,10 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
 
     setIsImporting(true);
     try {
-      const arrayBuffer = await file.arrayBuffer();
+      const [{ default: mammoth }, arrayBuffer] = await Promise.all([
+        import('mammoth'),
+        file.arrayBuffer(),
+      ]);
       const result = await mammoth.convertToHtml({ arrayBuffer });
       
       const parser = new DOMParser();

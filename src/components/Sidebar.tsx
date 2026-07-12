@@ -3,8 +3,10 @@ import { Book, Plus, MoreVertical, Menu, X, Trash2, Settings, ChevronLeft, Moon,
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { Chapter, ManuscriptMetadata, UserProfile, ExportSettings, DEFAULT_EXPORT_SETTINGS } from '../types';
-import { exportToManuscriptDocx, exportToMarkdown, exportToHtml, exportChaptersAsMarkdownZip } from '../lib/exportService';
-import { exportToEpub } from '../lib/epubExport';
+// Export modules are loaded on demand (dynamic import in each handler): they
+// pull in docx + jszip, which would otherwise sit in the main bundle every
+// visitor downloads before typing a word. Vite splits them into async chunks
+// fetched on the first export click.
 import { MarkdownExportDialog } from './MarkdownExportDialog';
 import { countWords, readingMinutes, formatWordCount } from '../lib/wordCount';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -342,6 +344,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleExportDocx = async () => {
     try {
       setIsExporting('docx');
+      const { exportToManuscriptDocx } = await import('../lib/exportService');
       await exportToManuscriptDocx(metadata, chapters);
     } catch (error) {
       console.error("Export failed:", error);
@@ -369,6 +372,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     try {
       setIsExporting('md');
+      const { exportToMarkdown, exportChaptersAsMarkdownZip } = await import('../lib/exportService');
       if (picked.length === 1) {
         exportToMarkdown(metadata, [picked[0].chapter], {
           singleChapter: true,
@@ -385,9 +389,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const handleExportHtml = () => {
+  const handleExportHtml = async () => {
     try {
       setIsExporting('html');
+      const { exportToHtml } = await import('../lib/exportService');
       exportToHtml(metadata, chapters, { html: exportSettings.html });
     } catch (error) {
       console.error("Export failed:", error);
@@ -404,6 +409,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handleExportEpub = async () => {
     try {
       setIsExporting('epub');
+      const { exportToEpub } = await import('../lib/epubExport');
       await exportToEpub(metadata, chapters, {
         copyrightNotice: exportSettings.epub.rightsText || undefined,
         coverSource: exportSettings.epub.coverSource,
@@ -425,6 +431,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (idx === -1) return;
     const chapter = chapters[idx];
     try {
+      const { exportToManuscriptDocx, exportToMarkdown, exportToHtml } = await import('../lib/exportService');
       if (format === 'docx') {
         await exportToManuscriptDocx(metadata, [chapter], { singleChapter: true });
       } else if (format === 'md') {
