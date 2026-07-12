@@ -621,7 +621,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {view === 'outline' ? 'Structure' : 'Manuscript'}
                   </span>
                 </div>
-                <h1 className={cn("text-xl sm:text-2xl font-serif italic px-2 truncate", isDarkMode ? "text-white" : "text-black")}>
+                <h1 className={cn("text-xl sm:text-2xl font-literata font-semibold normal-case px-2 truncate", isDarkMode ? "text-white" : "text-black")}>
                   {view === 'outline' ? (chapters.find(c => c.id === currentChapterId)?.title || 'Untitled Chapter') : (metadata.title || 'Untitled Manuscript')}
                 </h1>
               </div>

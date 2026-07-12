@@ -16,6 +16,7 @@ import pluginsRouter from './routes/plugins';
 import pluginsExternalRouter from './routes/plugins-external';
 import { attachCollab } from './collab';
 import grammarRouter from './routes/grammar';
+import settingsRouter from './routes/settings';
 
 async function start() {
   validateConfig();
@@ -78,6 +79,7 @@ async function start() {
   app.use('/api/plugins', pluginsRouter);
   app.use('/api/plugins-external', pluginsExternalRouter);
   app.use('/api/grammar', grammarRouter);
+  app.use('/api/settings', settingsRouter);
 
   // Serve side-loaded plugin files statically (for frontend dynamic import)
   app.use('/plugins-raw', express.static(path.join(config.dataDir, 'plugins')));

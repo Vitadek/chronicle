@@ -400,7 +400,7 @@ export function GlobalSettings({
             <div className="flex items-start gap-3 p-4 rounded-2xl bg-black/5 dark:bg-white/5">
               <Shield className="w-4 h-4 opacity-20 shrink-0 mt-0.5" />
               <p className="text-[10px] leading-relaxed opacity-40 italic">
-                Settings and API keys are stored locally on this device. Profile information can be synced to your title pages during export.
+                Settings sync to your Chronicle server, so they survive updates and follow you across devices. API keys stay local to this device. Profile information can be synced to your title pages during export.
               </p>
             </div>
           </section>

@@ -25,6 +25,7 @@ import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { Chapter, ManuscriptMetadata, UserProfile, Manuscript, Character, PlotNode, PlotEdge, ExportSettings, DEFAULT_EXPORT_SETTINGS } from './types';
 import { countWords } from './lib/wordCount';
+import { scheduleSettingsPush } from './lib/settingsSync';
 import type { Editor } from '@tiptap/react';
 
 export default function App() {
@@ -475,6 +476,31 @@ export default function App() {
     if (isDarkMode) root.classList.add('dark');
     else root.classList.remove('dark');
   }, [isDarkMode]);
+
+  // Mirror preferences to the server (debounced) whenever any of them change.
+  // localStorage alone is per-browser and evictable, which read as "settings
+  // reset after the update"; /api/settings is the durable copy, hydrated back
+  // into localStorage in main.tsx before render. Declared AFTER all the
+  // individual persist effects above so the snapshot reads fresh values.
+  useEffect(() => {
+    scheduleSettingsPush();
+  }, [
+    isDarkMode,
+    isAutocompleteEnabled,
+    isAutoCorrectEnabled,
+    isTenseCheckEnabled,
+    isGrammarCheckEnabled,
+    isIssuesPanelEnabled,
+    isThesaurusEnabled,
+    isZenModeEnabled,
+    isFirstLineIndentEnabled,
+    isAiEnabled,
+    isAiBubbleMenuEnabled,
+    touchControlsMode,
+    manuscriptFont,
+    exportSettings,
+    userProfile,
+  ]);
 
   const handleCreateNew = async () => {
     const id = Math.random().toString(36).substr(2, 9);

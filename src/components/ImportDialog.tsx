@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Upload, Loader2, CheckCircle2, XCircle, Info, AlertTriangle, BookOpen, FileText } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Manuscript } from '../types';
+import { scheduleSettingsPush } from '../lib/settingsSync';
 import type { ImportLogEntry } from '../lib/importService';
 
 interface ImportDialogProps {
@@ -45,6 +46,7 @@ export const ImportDialog: React.FC<ImportDialogProps> = ({
       localStorage.setItem('chronicle_import_help_hidden', String(!prev));
       return !prev;
     });
+    scheduleSettingsPush();
   };
   const fileInputRef = useRef<HTMLInputElement>(null);
 
