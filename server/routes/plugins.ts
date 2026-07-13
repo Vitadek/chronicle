@@ -19,7 +19,10 @@ import {
   builtModulePath,
   describePlugin,
   readManifest,
+  type DiskPlugin,
 } from '../lib/pluginBuild';
+import { resolve, dependentsOf, type ResolveInput } from '../lib/pluginResolve';
+import { hostCapabilities, explainMissingHostCapability } from '../lib/pluginCapabilities';
 
 /**
  * Plugins: install from git, build, update, pin, uninstall — plus each user's
@@ -90,10 +93,12 @@ function installedIds(): string[] {
     .map((e) => e.name);
 }
 
+type UserPlugin = DiskPlugin & { enabled: boolean; state: string };
+
 /** Disk manifest + git status, merged with this user's toggle/state. */
-async function listForUser(userId: string) {
+async function listForUser(userId: string): Promise<UserPlugin[]> {
   const rows = userRows(userId);
-  const out = [];
+  const out: UserPlugin[] = [];
   for (const id of installedIds()) {
     const disk = await describePlugin(id);
     if (!disk) continue;
@@ -107,6 +112,27 @@ async function listForUser(userId: string) {
   return out;
 }
 
+/**
+ * The plugin list plus its dependency resolution.
+ *
+ * Resolution is computed HERE and shipped to the client, which renders it
+ * verbatim. Deriving it a second time in the browser would be two
+ * implementations of the same rules, free to disagree — and the server has to
+ * own it regardless, because it is what refuses a bad `enabled` write.
+ */
+async function stateForUser(userId: string) {
+  const plugins = await listForUser(userId);
+  const hostCaps = await hostCapabilities();
+  const resolution = resolve(plugins as ResolveInput[], hostCaps);
+  return { plugins, hostCaps, resolution };
+}
+
+/** Turn unmet capabilities into something a human can act on. */
+const explain = (caps: string[]): string =>
+  caps
+    .map((cap) => (cap.startsWith('host:') ? explainMissingHostCapability(cap) : `Requires "${cap}", which no enabled plugin provides.`))
+    .join(' ');
+
 const idParam = (req: { params: { id: string } }): string => {
   if (!PLUGIN_ID_RE.test(req.params.id)) throw new Error('Invalid plugin id');
   return req.params.id;
@@ -116,7 +142,19 @@ const idParam = (req: { params: { id: string } }): string => {
 
 router.get('/', async (req, res) => {
   try {
-    res.json({ plugins: await listForUser(req.userId!) });
+    const { plugins, hostCaps, resolution } = await stateForUser(req.userId!);
+    res.json({
+      plugins: plugins.map((p) => ({
+        ...p,
+        status: resolution.status[p.id],
+        // A cycle is a build-class failure: the plugin is installed and enabled
+        // but cannot be activated, and the user has to edit a manifest to fix it.
+        buildError: p.buildError ?? resolution.cycles[p.id] ?? null,
+      })),
+      hostCapabilities: hostCaps,
+      shadowedCore: resolution.shadowedCore,
+      activationOrder: resolution.activationOrder,
+    });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to list plugins' });
   }
@@ -246,7 +284,14 @@ router.post('/:id/pin', async (req, res) => {
 
 const EnabledBody = z.object({ enabled: z.boolean() });
 
-router.put('/:id/enabled', (req, res) => {
+/**
+ * Toggling is where the dependency rules bite.
+ *
+ * Enforced on the SERVER, not just greyed out in the UI: the check has to hold
+ * for a stale tab, a second device, or curl — any of which would otherwise
+ * enable a plugin whose requirements aren't met and leave it silently broken.
+ */
+router.put('/:id/enabled', async (req, res) => {
   try {
     const id = idParam(req);
     const parsed = EnabledBody.safeParse(req.body);
@@ -254,6 +299,48 @@ router.put('/:id/enabled', (req, res) => {
       res.status(400).json({ error: 'enabled must be a boolean' });
       return;
     }
+
+    const { plugins, hostCaps, resolution } = await stateForUser(req.userId!);
+    const target = plugins.find((p) => p.id === id);
+    if (!target) {
+      res.status(404).json({ error: `Plugin "${id}" is not installed.` });
+      return;
+    }
+
+    if (parsed.data.enabled) {
+      const status = resolution.status[id];
+      if (status.missing.length) {
+        res.status(409).json({
+          error: `${target.name} can't be enabled yet. ${explain(status.missing)}`,
+          missing: status.missing,
+        });
+        return;
+      }
+      if (status.conflictsWith.length) {
+        // By plugin, not by (capability, plugin) — two plugins clashing over
+        // several capabilities are still just two plugins to the reader.
+        const names = [
+          ...new Set(status.conflictsWith.map((c) => plugins.find((p) => p.id === c.pluginId)?.name ?? c.pluginId)),
+        ].join(', ');
+        res.status(409).json({
+          error: `${target.name} conflicts with ${names} — they provide the same capability. Disable one first.`,
+          conflictsWith: status.conflictsWith,
+        });
+        return;
+      }
+    } else {
+      // Refuse to pull the rug from under a plugin that hard-requires this one.
+      const dependents = dependentsOf(id, plugins as ResolveInput[], hostCaps);
+      if (dependents.length) {
+        const names = dependents.map((d) => plugins.find((p) => p.id === d)?.name ?? d).join(', ');
+        res.status(409).json({
+          error: `${names} require${dependents.length === 1 ? 's' : ''} ${target.name}. Disable ${dependents.length === 1 ? 'it' : 'them'} first.`,
+          dependents,
+        });
+        return;
+      }
+    }
+
     upsertRecord(req.userId!, id, null, { enabled: parsed.data.enabled });
     res.json({ ok: true });
   } catch (err) {
@@ -306,9 +393,21 @@ router.get('/:id/module.js', (req, res) => {
 
 // ---- uninstall -------------------------------------------------------------
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const id = idParam(req); // v1 passed the raw param to path.join — traversal.
+
+    const { plugins, hostCaps } = await stateForUser(req.userId!);
+    const dependents = dependentsOf(id, plugins as ResolveInput[], hostCaps);
+    if (dependents.length) {
+      const names = dependents.map((d) => plugins.find((p) => p.id === d)?.name ?? d).join(', ');
+      res.status(409).json({
+        error: `Can't uninstall — ${names} depend${dependents.length === 1 ? 's' : ''} on it. Disable ${dependents.length === 1 ? 'that plugin' : 'those plugins'} first.`,
+        dependents,
+      });
+      return;
+    }
+
     removePlugin(id);
     db.prepare('DELETE FROM plugin_states WHERE user_id = ? AND plugin_id = ?').run(req.userId!, id);
     res.json({ ok: true });

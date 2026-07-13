@@ -1,4 +1,5 @@
 import { authFetch } from './authService';
+import type { PluginStatus } from '../plugins/api';
 
 /** How a plugin got onto this instance. */
 export type PluginSource = 'seed' | 'git' | 'local';
@@ -29,6 +30,27 @@ export interface InstalledPlugin {
   /** Populated by POST /:id/check-updates. */
   updateAvailable?: boolean;
   incoming?: PluginCommit[];
+
+  // --- dependency system (declared in the manifest, resolved by the server) ---
+  provides: string[];
+  requires: string[];
+  wants: string[];
+  conflicts: string[];
+  replaces: string[];
+  dependencies: Record<string, string>;
+  /** The server's verdict. The client renders this; it never re-derives it. */
+  status: PluginStatus;
+}
+
+/** Everything GET /api/plugins returns: the list, plus its resolution. */
+export interface PluginState {
+  plugins: InstalledPlugin[];
+  /** Host services currently available (`host:languagetool`, `host:ai`, …). */
+  hostCapabilities: string[];
+  /** `core:*` features suppressed because an enabled plugin replaces them. */
+  shadowedCore: string[];
+  /** Enabled plugins in dependency order — activate in this sequence. */
+  activationOrder: string[];
 }
 
 async function json<T>(res: Response, what: string): Promise<T> {
@@ -46,10 +68,10 @@ async function json<T>(res: Response, what: string): Promise<T> {
 }
 
 export const pluginService = {
-  async list(): Promise<InstalledPlugin[]> {
+  /** The installed list AND the server's dependency resolution for it. */
+  async list(): Promise<PluginState> {
     const res = await authFetch('/api/plugins');
-    const data = await json<{ plugins: InstalledPlugin[] }>(res, 'Listing plugins');
-    return data.plugins;
+    return json<PluginState>(res, 'Listing plugins');
   },
 
   /** Install from a git URL, or from a local folder path (dev escape hatch). */
@@ -87,13 +109,18 @@ export const pluginService = {
     return data.plugin;
   },
 
+  /**
+   * Toggle. The server rejects this with a 409 when the dependency rules say no
+   * (unmet requirement, conflict, or another plugin depends on this one) — its
+   * message names exactly what's wrong, so surface it rather than a generic one.
+   */
   async setEnabled(id: string, enabled: boolean): Promise<void> {
     const res = await authFetch(`/api/plugins/${encodeURIComponent(id)}/enabled`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
     });
-    if (!res.ok) throw new Error('Failed to toggle plugin');
+    await json(res, enabled ? 'Enabling plugin' : 'Disabling plugin');
   },
 
   /** Persist plugin state. `manuscriptId` null = global scope. */
@@ -106,8 +133,9 @@ export const pluginService = {
     if (!res.ok) throw new Error('Failed to save plugin state');
   },
 
+  /** Refused with a 409 (naming them) if other enabled plugins depend on this one. */
   async uninstall(id: string): Promise<void> {
     const res = await authFetch(`/api/plugins/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Failed to uninstall plugin');
+    await json(res, 'Uninstall');
   },
 };

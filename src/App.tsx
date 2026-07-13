@@ -5,7 +5,7 @@ import type { TenseShiftHit } from './lib/TenseShift';
 import type { GrammarMark } from './lib/Grammar';
 import { LibraryView } from './components/LibraryView';
 import { GlobalSettings } from './components/GlobalSettings';
-import { PluginHost, usePublishPluginRuntime } from './plugins/host/PluginHost';
+import { PluginHost, usePluginHost, usePublishPluginRuntime } from './plugins/host/PluginHost';
 import { PluginViewHost } from './plugins/host/PluginViewHost';
 import { manuscriptService } from './services/manuscriptService';
 import { startSync } from './services/syncService';
@@ -220,6 +220,29 @@ function AppInner() {
   // spell-check icon. When true, the open manuscript renders in ProofreadView
   // instead of the normal Sidebar+EditorView.
   const [isProofreadMode, setIsProofreadMode] = useState(false);
+
+  /**
+   * Core features a plugin has taken over (manifest `replaces: ["core:grammar"]`).
+   *
+   * This SHADOWS: while the plugin is enabled, core simply stops rendering its
+   * built-in — but the user's own `chronicle_grammar_check` setting is never
+   * written. Flipping their toggle off would persist, and uninstalling the plugin
+   * later would silently leave them with no grammar checking at all.
+   *
+   * The *_Active values below are what the app actually runs on. The raw
+   * is*Enabled state still drives Global Settings, which greys the toggle out and
+   * says which plugin owns it now.
+   */
+  const { shadowedCore } = usePluginHost();
+  const coreOn = (capability: string) => !shadowedCore.has(capability);
+
+  const grammarCheckActive = isGrammarCheckEnabled && coreOn('core:grammar');
+  const tenseCheckActive = isTenseCheckEnabled && coreOn('core:tense');
+  const autoCorrectActive = isAutoCorrectEnabled && coreOn('core:autocorrect');
+  const issuesPanelActive = isIssuesPanelEnabled && coreOn('core:issues');
+  const thesaurusActive = isThesaurusEnabled && coreOn('core:thesaurus');
+  const proofreadActive = coreOn('core:proofreader');
+  const outlinerActive = coreOn('core:outliner');
 
   // Keep the plugin host's view of the app current (editor, open manuscript, AI
   // availability). The host sits above this component so plugins survive
@@ -706,10 +729,13 @@ function AppInner() {
           onSelectManuscript={setCurrentManuscriptId}
           onCreateNew={handleCreateNew}
           onImportManuscript={handleImportManuscript}
-          onProofreadManuscript={(id) => {
+          // The Proofreader plugin contributes its own library-card action, so
+          // core withdraws its built-in one rather than showing two icons that
+          // open different proofreaders.
+          onProofreadManuscript={proofreadActive ? (id) => {
             setIsProofreadMode(true);
             setCurrentManuscriptId(id);
-          }}
+          } : undefined}
           onOpenSettings={() => setIsGlobalSettingsOpen(true)}
           isDarkMode={isDarkMode}
           refreshSignal={remoteRevision}
@@ -850,12 +876,12 @@ function AppInner() {
               chapterId={currentChapter.id}
               isTitlePage={isTitlePage}
               coverArt={metadata.coverArt}
-              isSidebarOpen={isSidebarOpen}              isThesaurusEnabled={isThesaurusEnabled}
+              isSidebarOpen={isSidebarOpen}              isThesaurusEnabled={thesaurusActive}
               isZenModeEnabled={isZenModeEnabled}
               isAutocompleteEnabled={isAutocompleteEnabled}
-              isTenseCheckEnabled={isTenseCheckEnabled}
-              isGrammarCheckEnabled={isGrammarCheckEnabled}
-              isAutoCorrectEnabled={isAutoCorrectEnabled}
+              isTenseCheckEnabled={tenseCheckActive}
+              isGrammarCheckEnabled={grammarCheckActive}
+              isAutoCorrectEnabled={autoCorrectActive}
               onTenseShifts={setTenseHits}
               onGrammarMarks={setGrammarMarks}
               isFirstLineIndentEnabled={isFirstLineIndentEnabled}

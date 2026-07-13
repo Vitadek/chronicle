@@ -8,6 +8,7 @@ Every feature is a first-class plugin using the same API: the bundled Chibi
 companion, the official plugins below, and anything you write.
 
 - [Installing a plugin](#installing-a-plugin) · [The official plugins](#the-official-plugins)
+- [Dependencies and capabilities](#dependencies-and-capabilities)
 - [Trust model](#trust-model--read-this-first)
 - [Writing your own](#the-shape-of-a-plugin-repo) · [Contribution slots](#what-you-can-contribute)
 
@@ -35,12 +36,17 @@ Each lives in its own repo. Paste any of these URLs:
 | **Issues Panel** | `https://github.com/Vitadek/chronicle-plugin-issues-panel.git` | One list of every checker finding, plus an on-demand AI grammar pass |
 | **Smart Thesaurus** | `https://github.com/Vitadek/chronicle-plugin-thesaurus.git` | Selection synonyms — offline first, optional AI lookup |
 
-> **Grammar Check / Tense Check / Autocorrect** replace the built-in checkers.
-> Turn the corresponding built-in toggle **off** in Settings before enabling
-> them, or you'll get doubled squiggles.
->
-> **Issues Panel** shows findings published by the checker plugins — install
-> Grammar Check and/or Tense Check alongside it, or its list stays empty.
+You don't have to prepare anything before enabling these. Chronicle reads what
+each one needs and enforces it (see [below](#dependencies-and-capabilities)):
+
+- Grammar Check, Tense Check and Autocorrect **replace** their built-in
+  equivalents, so the built-in stands down by itself — no doubled squiggles.
+  Settings greys it out with the plugin's name against it, and turning the plugin
+  off brings the built-in straight back.
+- Anything needing LanguageTool **refuses to enable** while the sidecar is down,
+  and says so, instead of quietly flagging nothing.
+- The Issues Panel reports **"Limited — no checker"** when nothing is publishing
+  findings to it, instead of showing an unexplained empty list.
 
 ### Updating
 
@@ -51,18 +57,80 @@ Chronicle never updates a plugin behind your back.
 - **Pin** freezes the plugin at its current commit; updates stop being offered
   until you unpin. Pin anything you rely on mid-draft.
 
-### Requirements
-
-- **Grammar Check / Proofreader** need the LanguageTool sidecar
-  (`LANGUAGETOOL_URL`, shipped in the compose files).
-- **AI features** (clarity pass, AI grammar pass, thesaurus AI lookup) need an AI
-  provider configured, and are hidden entirely when `AI_UI=off`. The clarity and
-  AI-grammar passes specifically need `GEMINI_API_KEY`.
-
 ### Installing from a local folder (development)
 
 Instead of a URL, give the **path** to a plugin folder on the server's
 filesystem. Handy while writing one; re-install to pick up changes.
+
+---
+
+## Dependencies and capabilities
+
+Everything a plugin can depend on — host services, built-in features, other
+plugins — is one flat namespace of **capability strings**, declared in the
+manifest and resolved by the server.
+
+```jsonc
+{
+  "provides":  ["checker", "checker:grammar"],
+  "requires":  ["host:languagetool"],   // hard — refuses to enable without it
+  "wants":     ["host:ai"],             // soft — enables, but flagged "limited"
+  "conflicts": ["checker:grammar"],     // no second grammar checker
+  "replaces":  ["core:grammar"],        // shadow the built-in while enabled
+  "dependencies": { "leven": "^4.0.0" } // npm — installed at build time
+}
+```
+
+A plugin **implicitly provides its own id**, so depending on a *named* plugin
+needs no special syntax — `"requires": ["chronicle.grammarcheck"]` just works.
+
+Three prefixes are reserved:
+
+| Prefix | Meaning |
+|---|---|
+| `host:*` | Provided by the server. `host:languagetool` (the sidecar **answered** — it is probed, not read from config, because `LANGUAGETOOL_URL` has a default and so is always "set"), `host:ai` (a provider key is present *and* `AI_UI` is on), `host:gemini` (needed for the structured-output passes). |
+| `core:*` | Chronicle's built-ins, and the only legal `replaces` targets: `core:grammar`, `core:tense`, `core:autocorrect`, `core:outliner`, `core:proofreader`, `core:thesaurus`, `core:issues`. A typo here is a manifest error, not a silent no-op. |
+| anything else | Your own tags. `checker`, `panel:issues`, `outline` — whatever you and the plugins you talk to agree on. |
+
+### What each field actually does
+
+- **`requires`** — the server **refuses to enable** the plugin (HTTP 409) until
+  every capability is provided, and names what's missing. It equally refuses to
+  disable or uninstall a plugin that another enabled plugin requires.
+- **`wants`** — the plugin enables regardless, but Settings marks it *Limited* and
+  says what's absent. Use this for "better with, fine without".
+- **`conflicts`** — can't be enabled alongside a provider of that capability. A
+  checker should list its own tag (`"provides": ["checker:grammar"]` +
+  `"conflicts": ["checker:grammar"]`) to mean *only one of me*.
+- **`replaces`** — while your plugin is enabled, Chronicle stops rendering that
+  built-in. It **shadows**: it never touches the user's setting, so uninstalling
+  your plugin gives them back exactly the configuration they had.
+
+Activation is ordered — anything you `require` or `want` activates before you do,
+so a panel never subscribes to the findings bus before the checker that fills it
+has published. (A mutual `wants` is legal and gets broken arbitrarily; a mutual
+`requires` is unsatisfiable and is reported as an error against both plugins.)
+
+### npm dependencies
+
+Chronicle's own dependencies are your **standard library** — `clsx`,
+`tailwind-merge`, `compromise`, `jszip`, `docx`, `zod` and everything else the app
+ships can simply be imported, with nothing to declare and no install step.
+
+For anything Chronicle *doesn't* ship, list it in `dependencies` and the server
+runs `npm install` at build time:
+
+```json
+"dependencies": { "leven": "^4.0.0" }
+```
+
+It is installed with `--ignore-scripts` (a package's `postinstall` never runs on
+your server) and bundled into your plugin. Your repo still needs no
+`package.json`, no lockfile, and no committed `node_modules`.
+
+> Declaring dependencies means the **install needs network access**. Plugins with
+> no `dependencies` — including all seven official ones — install and build
+> entirely offline.
 
 ---
 
@@ -76,6 +144,11 @@ sandbox.**
 Install only repos you trust and have read. Chronicle's protections are that
 installing is an authenticated, deliberate act, and that the compiled bundle is
 served only to logged-in users — not that a hostile plugin is contained.
+
+(`--ignore-scripts` above is not a security boundary either — your plugin's code
+already runs with full privileges in the browser. It simply declines to *also*
+hand out code execution on the server at install time, which is a different thing
+and an unnecessary one to give away.)
 
 ---
 
@@ -105,6 +178,7 @@ my-plugin/
 | `id` | Unique; also the on-disk folder. `[a-z0-9._-]` |
 | `entry` | Path to your entry file, relative to the repo root |
 | `minAppVersion` | Chronicle refuses to load the plugin below this version |
+| `provides` `requires` `wants` `conflicts` `replaces` `dependencies` | All optional — see [Dependencies and capabilities](#dependencies-and-capabilities) |
 
 **`src/index.tsx`**
 
@@ -194,7 +268,8 @@ useEffect(() => ctx.services.findings.subscribe(setAll), []);
 ```
 
 This is exactly how the Issues Panel lists Grammar Check's and Tense Check's
-results without depending on either.
+results without depending on either: it declares `"wants": ["checker"]` and takes
+whatever turns up.
 
 ## Imports you may use
 
@@ -207,11 +282,12 @@ uses — you must import these rather than bundle your own, or hooks will crash)
 
 **Everything else Chronicle already ships** (`clsx`, `tailwind-merge`,
 `compromise`, `jszip`, …) resolves too, and is **bundled into your plugin** — the
-app's dependencies act as your standard library. Your repo needs no
-`package.json`, no lockfile, no `node_modules`.
+app's dependencies act as your standard library.
 
-> If you import something Chronicle doesn't have, the build fails with a clear
-> message naming it. Vendor the code into your repo instead.
+**Anything else** goes in the manifest's `dependencies` and the server installs it
+for you — see [npm dependencies](#npm-dependencies). If you import something that
+is neither shipped nor declared, the build fails with a message naming it
+(`Could not resolve "left-pad"`), shown against the plugin in Settings.
 
 ## ⚠️ Building your own editor — read this or you will delete people's work
 

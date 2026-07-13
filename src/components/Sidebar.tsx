@@ -8,7 +8,7 @@ import { Chapter, ManuscriptMetadata, UserProfile, ExportSettings, DEFAULT_EXPOR
 // visitor downloads before typing a word. Vite splits them into async chunks
 // fetched on the first export click.
 import { MarkdownExportDialog } from './MarkdownExportDialog';
-import { usePluginHost, usePluginSlot } from '../plugins/host/PluginHost';
+import { useCoreFeature, usePluginHost, usePluginSlot } from '../plugins/host/PluginHost';
 import { PluginBoundary } from '../plugins/host/PluginBoundary';
 import { countWords, readingMinutes, formatWordCount } from '../lib/wordCount';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -254,7 +254,75 @@ const SortableChapter: React.FC<SortableChapterProps> = ({
   );
 };
 
-export const Sidebar: React.FC<SidebarProps> = ({ 
+/**
+ * A settings toggle for a built-in feature that a plugin is allowed to take over
+ * (manifest `replaces: ["core:grammar"]`).
+ *
+ * When a plugin owns the feature, core has already stood down — see
+ * useCoreFeature — so the switch would be lying about what it controls. Show who
+ * owns it now instead of a control that does nothing. We deliberately do NOT
+ * write the user's toggle: uninstalling the plugin must give them back exactly
+ * the setting they had.
+ */
+const ReplaceableToggle: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  /** The `core:*` capability a plugin can claim via `replaces`. */
+  capability: string;
+  enabled: boolean;
+  onToggle: () => void;
+  isDarkMode: boolean;
+}> = ({ icon, label, capability, enabled, onToggle, isDarkMode }) => {
+  const { installed, shadowedCore } = usePluginHost();
+
+  if (shadowedCore.has(capability)) {
+    const owner = installed.find((p) => p.enabled && p.replaces.includes(capability));
+    return (
+      <div className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm opacity-50">
+        <div className="flex items-center gap-3">
+          {icon}
+          <span className={cn("font-medium", isDarkMode ? "text-white/80" : "text-black/80")}>
+            {label}
+          </span>
+        </div>
+        <span
+          title={`Provided by the ${owner?.name ?? 'installed'} plugin`}
+          className={cn(
+            "text-[9px] uppercase tracking-widest font-bold px-2 py-1 rounded-md whitespace-nowrap",
+            isDarkMode ? "bg-white/10 text-white/60" : "bg-black/5 text-black/50",
+          )}
+        >
+          {owner?.name ?? 'Plugin'}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={onToggle}
+      className="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all text-sm group"
+    >
+      <div className="flex items-center gap-3">
+        {icon}
+        <span className={cn("font-medium", isDarkMode ? "text-white/80" : "text-black/80")}>
+          {label}
+        </span>
+      </div>
+      <div className={cn(
+        "w-8 h-4 rounded-full relative transition-colors duration-300",
+        enabled ? "bg-white/20" : "bg-black/10"
+      )}>
+        <div className={cn(
+          "absolute top-1 w-2 h-2 rounded-full transition-all duration-300",
+          enabled ? "bg-white left-5" : "bg-black left-1"
+        )} />
+      </div>
+    </button>
+  );
+};
+
+export const Sidebar: React.FC<SidebarProps> = ({
   isOpen, 
   onToggle, 
   isDarkMode, 
@@ -325,14 +393,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const [view, setView] = useState<'chapters' | 'outline' | 'issues' | 'settings' | 'export' | 'profile' | string>('chapters');
 
-  // If the Issues panel is switched off while it's the active tab, fall back.
-  useEffect(() => {
-    if (!isIssuesPanelEnabled && view === 'issues') setView('chapters');
-  }, [isIssuesPanelEnabled, view]);
-  // Sidebar tabs contributed by plugins — the slot a migrated Issues panel or
-  // Outliner pane would occupy.
+  // Sidebar tabs contributed by plugins — the slot the Issues Panel and Outliner
+  // plugins occupy.
   const pluginTabs = usePluginSlot('sidebarTabs');
   const { makeContext, reportError } = usePluginHost();
+
+  // …and when one of those plugins declares it REPLACES the built-in equivalent,
+  // core stands down so the user doesn't get two Outline panes / two Issues tabs.
+  const issuesActive = isIssuesPanelEnabled && useCoreFeature('core:issues');
+  const outlineActive = useCoreFeature('core:outliner');
+
+  // If the active tab is switched off (by the user's toggle, or by a plugin
+  // taking the feature over), fall back to the chapter list.
+  useEffect(() => {
+    if (!issuesActive && view === 'issues') setView('chapters');
+    if (!outlineActive && view === 'outline') setView('chapters');
+  }, [issuesActive, outlineActive, view]);
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<'docx' | 'md' | 'html' | 'epub' | null>(null);
@@ -676,18 +752,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <Book className="w-3 h-3" />
                 Draft
               </button>
-              <button 
-                onClick={() => setView('outline')}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
-                  view === 'outline' ? (isDarkMode ? "bg-white/10 text-white" : "bg-white text-black shadow-sm") : "opacity-40",
-                  currentChapterId === 'title-page' && "pointer-events-none opacity-10"
-                )}
-              >
-                <List className="w-3 h-3" />
-                Outline
-              </button>
-              {isIssuesPanelEnabled && (
+              {outlineActive && (
+                <button
+                  onClick={() => setView('outline')}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
+                    view === 'outline' ? (isDarkMode ? "bg-white/10 text-white" : "bg-white text-black shadow-sm") : "opacity-40",
+                    currentChapterId === 'title-page' && "pointer-events-none opacity-10"
+                  )}
+                >
+                  <List className="w-3 h-3" />
+                  Outline
+                </button>
+              )}
+              {issuesActive && (
                 <button
                   onClick={() => setView('issues')}
                   className={cn(
@@ -1294,110 +1372,50 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           </div>
                         </button>
 
-                        <button
-                          onClick={onToggleTenseCheck}
-                          className="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all text-sm group"
-                        >
-                          <div className="flex items-center gap-3">
-                            <Clock className="w-4 h-4" />
-                            <span className={cn("font-medium", isDarkMode ? "text-white/80" : "text-black/80")}>
-                              Tense Check
-                            </span>
-                          </div>
-                          <div className={cn(
-                            "w-8 h-4 rounded-full relative transition-colors duration-300",
-                            isTenseCheckEnabled ? "bg-white/20" : "bg-black/10"
-                          )}>
-                            <div className={cn(
-                              "absolute top-1 w-2 h-2 rounded-full transition-all duration-300",
-                              isTenseCheckEnabled ? "bg-white left-5" : "bg-black left-1"
-                            )} />
-                          </div>
-                        </button>
+                        <ReplaceableToggle
+                          icon={<Clock className="w-4 h-4" />}
+                          label="Tense Check"
+                          capability="core:tense"
+                          enabled={isTenseCheckEnabled}
+                          onToggle={onToggleTenseCheck}
+                          isDarkMode={isDarkMode}
+                        />
 
-                        <button
-                          onClick={onToggleGrammarCheck}
-                          className="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all text-sm group"
-                        >
-                          <div className="flex items-center gap-3">
-                            <SpellCheck className="w-4 h-4" />
-                            <span className={cn("font-medium", isDarkMode ? "text-white/80" : "text-black/80")}>
-                              Grammar Check
-                            </span>
-                          </div>
-                          <div className={cn(
-                            "w-8 h-4 rounded-full relative transition-colors duration-300",
-                            isGrammarCheckEnabled ? "bg-white/20" : "bg-black/10"
-                          )}>
-                            <div className={cn(
-                              "absolute top-1 w-2 h-2 rounded-full transition-all duration-300",
-                              isGrammarCheckEnabled ? "bg-white left-5" : "bg-black left-1"
-                            )} />
-                          </div>
-                        </button>
+                        <ReplaceableToggle
+                          icon={<SpellCheck className="w-4 h-4" />}
+                          label="Grammar Check"
+                          capability="core:grammar"
+                          enabled={isGrammarCheckEnabled}
+                          onToggle={onToggleGrammarCheck}
+                          isDarkMode={isDarkMode}
+                        />
 
-                        <button
-                          onClick={onToggleAutoCorrect}
-                          className="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all text-sm group"
-                        >
-                          <div className="flex items-center gap-3">
-                            <CaseSensitive className="w-4 h-4" />
-                            <span className={cn("font-medium", isDarkMode ? "text-white/80" : "text-black/80")}>
-                              Autocorrect
-                            </span>
-                          </div>
-                          <div className={cn(
-                            "w-8 h-4 rounded-full relative transition-colors duration-300",
-                            isAutoCorrectEnabled ? "bg-white/20" : "bg-black/10"
-                          )}>
-                            <div className={cn(
-                              "absolute top-1 w-2 h-2 rounded-full transition-all duration-300",
-                              isAutoCorrectEnabled ? "bg-white left-5" : "bg-black left-1"
-                            )} />
-                          </div>
-                        </button>
+                        <ReplaceableToggle
+                          icon={<CaseSensitive className="w-4 h-4" />}
+                          label="Autocorrect"
+                          capability="core:autocorrect"
+                          enabled={isAutoCorrectEnabled}
+                          onToggle={onToggleAutoCorrect}
+                          isDarkMode={isDarkMode}
+                        />
 
-                        <button
-                          onClick={onToggleIssuesPanel}
-                          className="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all text-sm group"
-                        >
-                          <div className="flex items-center gap-3">
-                            <List className="w-4 h-4" />
-                            <span className={cn("font-medium", isDarkMode ? "text-white/80" : "text-black/80")}>
-                              Issues Panel
-                            </span>
-                          </div>
-                          <div className={cn(
-                            "w-8 h-4 rounded-full relative transition-colors duration-300",
-                            isIssuesPanelEnabled ? "bg-white/20" : "bg-black/10"
-                          )}>
-                            <div className={cn(
-                              "absolute top-1 w-2 h-2 rounded-full transition-all duration-300",
-                              isIssuesPanelEnabled ? "bg-white left-5" : "bg-black left-1"
-                            )} />
-                          </div>
-                        </button>
+                        <ReplaceableToggle
+                          icon={<List className="w-4 h-4" />}
+                          label="Issues Panel"
+                          capability="core:issues"
+                          enabled={isIssuesPanelEnabled}
+                          onToggle={onToggleIssuesPanel}
+                          isDarkMode={isDarkMode}
+                        />
 
-                        <button
-                          onClick={onToggleThesaurus}
-                          className="w-full flex items-center justify-between px-4 py-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-all text-sm group"
-                        >
-                          <div className="flex items-center gap-3">
-                            <Search className="w-4 h-4" />
-                            <span className={cn("font-medium", isDarkMode ? "text-white/80" : "text-black/80")}>
-                              Thesaurus Popup
-                            </span>
-                          </div>
-                          <div className={cn(
-                            "w-8 h-4 rounded-full relative transition-colors duration-300",
-                            isThesaurusEnabled ? "bg-white/20" : "bg-black/10"
-                          )}>
-                            <div className={cn(
-                              "absolute top-1 w-2 h-2 rounded-full transition-all duration-300",
-                              isThesaurusEnabled ? "bg-white left-5" : "bg-black left-1"
-                            )} />
-                          </div>
-                        </button>
+                        <ReplaceableToggle
+                          icon={<Search className="w-4 h-4" />}
+                          label="Thesaurus Popup"
+                          capability="core:thesaurus"
+                          enabled={isThesaurusEnabled}
+                          onToggle={onToggleThesaurus}
+                          isDarkMode={isDarkMode}
+                        />
 
                         <button 
                           onClick={onToggleZenMode}

@@ -203,14 +203,24 @@ server-side. Nothing to build or download by hand.
 | **Issues Panel** — every checker finding in one list | `https://github.com/Vitadek/chronicle-plugin-issues-panel.git` |
 | **Smart Thesaurus** — selection synonyms, offline-first | `https://github.com/Vitadek/chronicle-plugin-thesaurus.git` |
 
+Plugins **declare what they need**, and Chronicle enforces it — so there's nothing
+to set up first:
+
+- Grammar Check, Tense Check and Autocorrect **replace** the built-in versions.
+  The built-in stands down on its own (no doubled squiggles) and comes back the
+  moment you disable the plugin.
+- A plugin needing the LanguageTool sidecar won't enable while it's down — it
+  tells you, instead of silently flagging nothing.
+- The Issues Panel says *"Limited — no checker"* rather than showing a blank list.
+
 Updates are explicit: **Check for updates** shows you the incoming commits before
 you apply them, and you can **pin** a plugin to a commit so nothing shifts
 mid-draft.
 
 Writing your own is a `chronicle-plugin.json` and one `.tsx` file — no build
-tooling. **[PLUGINS.md](./PLUGINS.md)** has the API, the contribution slots, and
-the trust model (plugins run with full privileges — install only repos you
-trust).
+tooling. **[PLUGINS.md](./PLUGINS.md)** has the API, the contribution slots, the
+dependency/capability system, and the trust model (plugins run with full
+privileges — install only repos you trust).
 
 See [BACKEND.md](./BACKEND.md) for architecture, the sync protocol, and
 deployment notes.

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { config } from '../config';
 
 /**
  * Grammar proxy → self-hosted LanguageTool (the engine LibreOffice uses).
@@ -10,8 +11,8 @@ import { Router } from 'express';
  */
 const router = Router();
 
-const LT_URL = (process.env.LANGUAGETOOL_URL || 'http://languagetool:8010').replace(/\/+$/, '');
-const LT_LANG = process.env.LANGUAGETOOL_LANG || 'en-US';
+const LT_URL = config.grammar.languagetoolUrl;
+const LT_LANG = config.grammar.languagetoolLang;
 
 interface LtMatch {
   offset: number;

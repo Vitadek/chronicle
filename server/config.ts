@@ -109,6 +109,17 @@ export const config = {
   /** OpenAI TTS model + voice for /api/ai/speak. */
   audioModel: process.env.AUDIO_MODEL || 'gpt-4o-mini-tts',
   audioVoice: process.env.AUDIO_VOICE || 'alloy',
+
+  grammar: {
+    /**
+     * The LanguageTool sidecar. Note the DEFAULT: this is always a non-empty
+     * string, so "is LanguageTool available?" cannot be answered by checking
+     * whether it is set — plugin capability detection probes it instead
+     * (server/lib/pluginCapabilities.ts).
+     */
+    languagetoolUrl: (process.env.LANGUAGETOOL_URL || 'http://languagetool:8010').replace(/\/+$/, ''),
+    languagetoolLang: process.env.LANGUAGETOOL_LANG || 'en-US',
+  },
 };
 
 export type AppConfig = typeof config;

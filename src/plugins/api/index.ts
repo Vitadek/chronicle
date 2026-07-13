@@ -20,7 +20,60 @@ import type { Editor } from '@tiptap/react';
 import type { AnyExtension, Extension, Node, Mark } from '@tiptap/core';
 
 /** Bumped when the host makes a breaking change to this contract. */
-export const PLUGIN_API_VERSION = 2;
+export const PLUGIN_API_VERSION = 3;
+
+// ---------------------------------------------------------------------------
+// Dependencies — declared in chronicle-plugin.json, enforced by the server
+// (server/lib/pluginResolve.ts). Mirrored here so plugin authors get types.
+// ---------------------------------------------------------------------------
+
+/**
+ * Host services a plugin can depend on. Detected live, not read from config:
+ * `host:languagetool` means the sidecar ANSWERED, because LANGUAGETOOL_URL has
+ * a default and is therefore always "set".
+ */
+export type HostCapability = 'host:languagetool' | 'host:ai' | 'host:gemini';
+
+/** Built-in features a plugin can supersede via `replaces`. */
+export type CoreCapability =
+  | 'core:grammar'
+  | 'core:tense'
+  | 'core:autocorrect'
+  | 'core:outliner'
+  | 'core:proofreader'
+  | 'core:thesaurus'
+  | 'core:issues';
+
+/**
+ * The dependency half of chronicle-plugin.json.
+ *
+ *   "provides":  ["checker", "checker:grammar"],
+ *   "requires":  ["host:languagetool"],   // hard — refuses to enable without it
+ *   "wants":     ["host:ai"],             // soft — enables, flagged "limited"
+ *   "conflicts": ["checker:grammar"],     // no second grammar checker
+ *   "replaces":  ["core:grammar"],        // shadow the built-in while enabled
+ *   "dependencies": { "leven": "^4.0.0" } // npm, installed at build time
+ *
+ * A plugin implicitly provides its own id, so `requires: ["chronicle.grammarcheck"]`
+ * — depending on a *named* plugin — needs no extra syntax.
+ */
+export interface PluginManifestDeps {
+  provides?: string[];
+  requires?: (HostCapability | string)[];
+  wants?: (HostCapability | string)[];
+  conflicts?: string[];
+  replaces?: CoreCapability[];
+  dependencies?: Record<string, string>;
+}
+
+/** Why a plugin can't be enabled, or is running degraded. Computed server-side. */
+export interface PluginStatus {
+  /** Unmet hard requirements. Non-empty ⇒ cannot be enabled. */
+  missing: string[];
+  /** Unmet soft requirements. Runs, but limited. */
+  unmetWants: string[];
+  conflictsWith: { capability: string; pluginId: string }[];
+}
 
 // ---------------------------------------------------------------------------
 // Context handed to a plugin at activation and to every contribution

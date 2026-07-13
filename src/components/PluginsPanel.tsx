@@ -7,6 +7,33 @@ import { usePluginHost } from '../plugins/host/PluginHost';
 import { PluginBoundary } from '../plugins/host/PluginBoundary';
 import { pluginService, type InstalledPlugin, type PluginCommit } from '../services/pluginService';
 
+/** `core:grammar` → "Grammar Check", for the "Replaces the built-in …" line. */
+const CORE_FEATURE_NAMES: Record<string, string> = {
+  'core:grammar': 'Grammar Check',
+  'core:tense': 'Tense Check',
+  'core:autocorrect': 'Autocorrect',
+  'core:outliner': 'Outline pane',
+  'core:proofreader': 'Proofread mode',
+  'core:thesaurus': 'Thesaurus',
+  'core:issues': 'Issues Panel',
+};
+const coreFeatureName = (cap: string) => CORE_FEATURE_NAMES[cap] ?? cap;
+
+/**
+ * A capability string, in plain English.
+ *
+ * `host:*` needs a real explanation — "needs host:languagetool" tells a user
+ * nothing. Free tags (`checker`) are shown as-is, because they're the plugin
+ * author's own vocabulary and we have nothing better to call them.
+ */
+const HOST_CAPABILITY_NAMES: Record<string, string> = {
+  'host:languagetool': 'the LanguageTool sidecar',
+  'host:ai': 'AI to be configured and enabled',
+  'host:gemini': 'a Gemini API key',
+};
+const capabilityName = (cap: string) =>
+  HOST_CAPABILITY_NAMES[cap] ?? (cap.startsWith('core:') ? `the built-in ${coreFeatureName(cap)}` : `a plugin providing "${cap}"`);
+
 /**
  * The plugin manager (Global Settings → Plugins).
  *
@@ -15,6 +42,9 @@ import { pluginService, type InstalledPlugin, type PluginCommit } from '../servi
  * plugin can be pinned to a tag/commit so an upstream change never lands
  * mid-draft. Seeded plugins (shipped in the image) work offline and appear here
  * alongside the rest; there is only one class of plugin.
+ *
+ * Requirements (manifest `requires`/`wants`/`conflicts`/`replaces`) are resolved
+ * SERVER-side; this renders that verdict and never re-derives it.
  */
 export const PluginsPanel: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) => {
   const { installed, loaded, errors, isLoading, refresh, setEnabled, makeContext, reportError } = usePluginHost();
@@ -85,11 +115,33 @@ export const PluginsPanel: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) 
       await pluginService.uninstall(p.id);
       await refresh();
     } catch (err) {
+      // Includes the dependency refusal ("Issues Panel depends on it").
       setInstallError(err instanceof Error ? err.message : 'Uninstall failed');
     } finally {
       setBusy(null);
     }
   };
+
+  /**
+   * Toggle a plugin. The server enforces the dependency rules and rejects with a
+   * message naming exactly what's wrong — an unmet requirement, a conflict, or
+   * another plugin that depends on this one — so surface it instead of letting
+   * the rejection vanish.
+   */
+  const toggle = async (p: InstalledPlugin) => {
+    setBusy(p.id);
+    setInstallError(null);
+    try {
+      await setEnabled(p.id, !p.enabled);
+    } catch (err) {
+      setInstallError(err instanceof Error ? err.message : 'Failed to toggle plugin');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** A plugin's display name, for messages that reference another plugin. */
+  const nameOf = (id: string): string => installed.find((p) => p.id === id)?.name ?? id;
 
   /** What a loaded plugin actually contributes — shown so you know its reach. */
   const slotsFor = (id: string): string[] => {
@@ -161,6 +213,10 @@ export const PluginsPanel: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) 
           const incoming = updates[p.id];
           const slots = slotsFor(p.id);
           const isBusy = busy === p.id;
+          // The server's verdict — it refuses the enable itself, this just keeps
+          // the UI from offering a button that's guaranteed to fail.
+          const blocked = p.status.missing;
+          const cannotEnable = blocked.length > 0 || p.status.conflictsWith.length > 0;
 
           return (
             <div
@@ -194,6 +250,41 @@ export const PluginsPanel: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) 
 
                   {slots.length > 0 && (
                     <p className="text-[9px] opacity-30 mt-1.5 font-mono">contributes: {slots.join(' · ')}</p>
+                  )}
+
+                  {p.replaces.length > 0 && (
+                    <p className="text-[9px] opacity-40 mt-1.5">
+                      Replaces the built-in {p.replaces.map(coreFeatureName).join(' and ')}
+                      {p.enabled ? '' : ' when enabled'}.
+                    </p>
+                  )}
+
+                  {/* Unmet HARD requirements: the plugin cannot run. The server
+                      refuses to enable it, so say why rather than letting the
+                      user click a button that 409s. */}
+                  {blocked.length > 0 && (
+                    <p className="flex items-start gap-1.5 mt-2 text-[10px] text-amber-500 leading-relaxed">
+                      <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                      <span>Needs {blocked.map(capabilityName).join(', ')}.</span>
+                    </p>
+                  )}
+
+                  {/* Unmet SOFT requirements: it runs, just not at full strength. */}
+                  {p.status.unmetWants.length > 0 && blocked.length === 0 && (
+                    <p className="text-[10px] opacity-40 mt-2 leading-relaxed">
+                      Limited — no {p.status.unmetWants.map(capabilityName).join(' or ')}.
+                    </p>
+                  )}
+
+                  {p.status.conflictsWith.length > 0 && (
+                    <p className="flex items-start gap-1.5 mt-2 text-[10px] text-amber-500 leading-relaxed">
+                      <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                      <span>
+                        Conflicts with{' '}
+                        {[...new Set(p.status.conflictsWith.map((c) => nameOf(c.pluginId)))].join(', ')} — they do
+                        the same job. Disable one.
+                      </span>
+                    </p>
                   )}
 
                   {error && (
@@ -243,8 +334,12 @@ export const PluginsPanel: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) 
 
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <button
-                    onClick={() => setEnabled(p.id, !p.enabled)}
-                    disabled={isBusy || !!p.buildError}
+                    onClick={() => toggle(p)}
+                    // An already-enabled plugin must stay clickable even when
+                    // blocked — otherwise a conflict or a dead LanguageTool would
+                    // trap it in the "on" position with no way to turn it off.
+                    disabled={isBusy || !!p.buildError || (!p.enabled && cannotEnable)}
+                    title={!p.enabled && cannotEnable ? 'Requirements not met — see above' : undefined}
                     className={cn(
                       'px-3 py-1.5 rounded-lg text-[9px] uppercase font-black tracking-widest transition-all disabled:opacity-30',
                       p.enabled

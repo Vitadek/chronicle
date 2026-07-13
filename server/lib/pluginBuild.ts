@@ -1,8 +1,14 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import * as esbuild from 'esbuild';
 import { z } from 'zod';
 import { PLUGIN_ID_RE, pluginDir, readMeta, currentCommit } from './pluginRepo';
+import { CORE_CAPABILITIES, type PluginDeps } from './pluginResolve';
+
+const execFileAsync = promisify(execFile);
 
 /**
  * Compiles a plugin's TypeScript/TSX source into something the browser can run.
@@ -37,6 +43,10 @@ export const SHARED_EXTERNALS = [
   '@chronicle/plugin-api',
 ];
 
+/** A capability string: `host:x`, `core:x`, a plugin id, or a free tag. */
+const Capability = z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9._:-]*$/i, 'invalid capability string');
+const CapabilityList = z.array(Capability).max(20).default([]);
+
 export const ManifestSchema = z.object({
   id: z.string().regex(PLUGIN_ID_RE, 'id must be alphanumeric with . _ -'),
   name: z.string().min(1).max(80),
@@ -46,12 +56,107 @@ export const ManifestSchema = z.object({
   entry: z.string().min(1).max(200),
   /** Minimum Chronicle version this plugin supports. */
   minAppVersion: z.string().max(40).optional(),
+
+  // --- the dependency system (see lib/pluginResolve.ts) ---
+  /** Capability tags this plugin offers. Its id is provided implicitly. */
+  provides: CapabilityList,
+  /** Hard: the plugin cannot be enabled unless every one of these is provided. */
+  requires: CapabilityList,
+  /** Soft: the plugin enables anyway, but is flagged "limited" in Settings. */
+  wants: CapabilityList,
+  /** Cannot be enabled alongside a provider of these (e.g. a 2nd grammar checker). */
+  conflicts: CapabilityList,
+  /**
+   * Built-in features this plugin supersedes. While it is enabled the host stops
+   * registering them — see the shadowing note in pluginResolve.ts. Restricted to
+   * the known `core:*` set so a typo is an error here, not a silent no-shadow at
+   * runtime.
+   */
+  replaces: z
+    .array(z.enum(CORE_CAPABILITIES))
+    .max(CORE_CAPABILITIES.length)
+    .default([]),
+  /**
+   * npm packages to install at build time. Everything Chronicle itself ships is
+   * already importable without declaring it (see nodePaths below); this is for
+   * anything else.
+   */
+  dependencies: z
+    .record(z.string().max(120), z.string().max(60))
+    .default({})
+    .refine((d) => Object.keys(d).length <= 30, 'at most 30 dependencies'),
 });
 export type PluginManifest = z.infer<typeof ManifestSchema>;
 
 export const MANIFEST_FILE = 'chronicle-plugin.json';
-const OUT_FILE = path.join('.chronicle-build', 'plugin.js');
-const ERR_FILE = path.join('.chronicle-build', 'error.txt');
+const BUILD_DIR = '.chronicle-build';
+const OUT_FILE = path.join(BUILD_DIR, 'plugin.js');
+const ERR_FILE = path.join(BUILD_DIR, 'error.txt');
+const DEPS_HASH_FILE = path.join(BUILD_DIR, 'deps.hash');
+
+/** npm install can hang on a bad registry; don't wedge the request forever. */
+const NPM_TIMEOUT_MS = 120_000;
+
+/**
+ * Install a plugin's declared npm dependencies.
+ *
+ * Everything lands in `.chronicle-build/` rather than the repo root, because
+ * pullRepo() does a `git.checkout({ force: true })` — a package.json we
+ * synthesized at the root would fight the repo's own tree on every update.
+ * esbuild picks it up via nodePaths.
+ *
+ * `--ignore-scripts` keeps a package's postinstall from executing as the server
+ * user. This is NOT a security boundary — plugin code already runs with full
+ * privileges in the browser, that's the documented trust model — it just keeps
+ * install-time code execution off the host, which is a strictly different (and
+ * unnecessary) thing to hand out.
+ */
+async function installDependencies(
+  dir: string,
+  id: string,
+  dependencies: Record<string, string>,
+): Promise<void> {
+  const buildDir = path.join(dir, BUILD_DIR);
+  const hashFile = path.join(dir, DEPS_HASH_FILE);
+  const modules = path.join(buildDir, 'node_modules');
+
+  if (!Object.keys(dependencies).length) {
+    // Declared none: make sure a previously-installed tree can't linger and
+    // keep satisfying an import the manifest no longer asks for.
+    fs.rmSync(modules, { recursive: true, force: true });
+    fs.rmSync(hashFile, { force: true });
+    return;
+  }
+
+  const hash = crypto.createHash('sha256').update(JSON.stringify(dependencies)).digest('hex');
+  const cached = fs.existsSync(hashFile) ? fs.readFileSync(hashFile, 'utf8') : '';
+  if (cached === hash && fs.existsSync(modules)) return; // unchanged — don't reinstall on every rebuild/pin
+
+  fs.mkdirSync(buildDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(buildDir, 'package.json'),
+    JSON.stringify({ name: `chronicle-plugin-${id}`, version: '0.0.0', private: true, dependencies }, null, 2),
+  );
+
+  try {
+    await execFileAsync(
+      'npm',
+      ['install', '--ignore-scripts', '--omit=dev', '--no-audit', '--no-fund', '--loglevel=error'],
+      { cwd: buildDir, timeout: NPM_TIMEOUT_MS },
+    );
+  } catch (err) {
+    fs.rmSync(hashFile, { force: true }); // a failed install must not look cached
+    const e = err as { stderr?: string; message?: string };
+    const detail = (e.stderr || e.message || 'npm install failed').trim();
+    throw new Error(
+      `Installing dependencies failed.\n${detail}\n\n` +
+      `(Chronicle's own dependencies are importable without declaring them — ` +
+      `only list packages the app doesn't already ship.)`,
+    );
+  }
+
+  fs.writeFileSync(hashFile, hash);
+}
 
 export function readManifest(dir: string): PluginManifest {
   const file = path.join(dir, MANIFEST_FILE);
@@ -108,6 +213,8 @@ export async function buildPlugin(id: string): Promise<{ ok: true } | { ok: fals
       throw new Error(`entry "${manifest.entry}" does not exist in the repo.`);
     }
 
+    await installDependencies(dir, manifest.id, manifest.dependencies);
+
     await esbuild.build({
       entryPoints: [entry],
       outfile,
@@ -121,13 +228,19 @@ export async function buildPlugin(id: string): Promise<{ ok: true } | { ok: fals
       external: SHARED_EXTERNALS,
       logLevel: 'silent',
       absWorkingDir: dir,
-      // Plugin repos have no node_modules (there is no install step — the whole
-      // point). Let them resolve against Chronicle's own dependencies, which
-      // become the plugin "standard library": anything the app already ships
-      // (compromise, jszip, docx, …) can simply be imported and is BUNDLED into
-      // the plugin. Libraries the app shares at runtime stay external (above);
-      // everything else is inlined, so the plugin remains self-contained.
-      nodePaths: [path.join(process.cwd(), 'node_modules')],
+      // Resolution order matters:
+      //  1. the plugin's own declared deps (manifest `dependencies`, installed
+      //     above into .chronicle-build/node_modules) — these win;
+      //  2. Chronicle's own dependencies, which act as the plugin STANDARD
+      //     LIBRARY: anything the app already ships (compromise, jszip, docx, …)
+      //     can just be imported, with nothing to declare and no install.
+      // Either way the package is BUNDLED into the plugin. Only the libraries the
+      // host shares at runtime stay external (SHARED_EXTERNALS, above), so a
+      // plugin never gets a second React.
+      nodePaths: [
+        path.join(dir, BUILD_DIR, 'node_modules'),
+        path.join(process.cwd(), 'node_modules'),
+      ],
     });
     return { ok: true };
   } catch (err) {
@@ -142,7 +255,7 @@ export async function buildPlugin(id: string): Promise<{ ok: true } | { ok: fals
   }
 }
 
-export interface DiskPlugin {
+export interface DiskPlugin extends PluginDeps {
   id: string;
   name: string;
   description: string;
@@ -152,6 +265,8 @@ export interface DiskPlugin {
   commit?: string;
   pinnedRef?: string | null;
   buildError: string | null;
+  /** npm packages this plugin declared (informational, for Settings). */
+  dependencies: Record<string, string>;
 }
 
 /** Read one installed plugin's manifest + git/build status. */
@@ -176,5 +291,13 @@ export async function describePlugin(id: string): Promise<DiskPlugin | null> {
     commit: await currentCommit(dir),
     pinnedRef: meta.pinnedRef ?? null,
     buildError: manifestError ?? readBuildError(id),
+    // A plugin whose manifest won't parse declares nothing — resolve() also
+    // treats a buildError as "provides nothing", so it can't satisfy anyone.
+    provides: manifest?.provides ?? [],
+    requires: manifest?.requires ?? [],
+    wants: manifest?.wants ?? [],
+    conflicts: manifest?.conflicts ?? [],
+    replaces: manifest?.replaces ?? [],
+    dependencies: manifest?.dependencies ?? {},
   };
 }

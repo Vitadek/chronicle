@@ -16,7 +16,12 @@ interface LibraryViewProps {
    *  the import dialog can show the error instead of a silent success. */
   onImportManuscript: (manuscript: Manuscript) => Promise<void> | void;
   /** Open the manuscript in Proofread mode (guided spelling/grammar/clarity pass). */
-  onProofreadManuscript: (id: string) => void;
+  /**
+   * Undefined when the Proofreader PLUGIN has replaced the built-in one
+   * (`replaces: ["core:proofreader"]`) — it contributes its own card action, so
+   * core withdraws this icon rather than showing two that do different things.
+   */
+  onProofreadManuscript?: (id: string) => void;
   onOpenSettings: () => void;
   isDarkMode: boolean;
   /** Bumped by the parent when remote sync has new data. Triggers a refetch. */
@@ -224,17 +229,19 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
                         </div>
                       ) : (
                         <div className="flex items-center">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onProofreadManuscript(m.id);
-                            }}
-                            className="p-2 opacity-40 hover:opacity-100 hover:text-blue-500 transition-all"
-                            aria-label="Proofread manuscript"
-                            title="Proofread — guided spelling, grammar & clarity pass"
-                          >
-                            <SpellCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                          </button>
+                          {onProofreadManuscript && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onProofreadManuscript(m.id);
+                              }}
+                              className="p-2 opacity-40 hover:opacity-100 hover:text-blue-500 transition-all"
+                              aria-label="Proofread manuscript"
+                              title="Proofread — guided spelling, grammar & clarity pass"
+                            >
+                              <SpellCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                            </button>
+                          )}
                           {/* Plugin-contributed card actions */}
                           {libraryActions.map(({ pluginId, item }) => (
                             <button

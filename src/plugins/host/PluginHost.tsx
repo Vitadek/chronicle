@@ -37,6 +37,13 @@ interface PluginHostValue {
   /** id → message for plugins that failed to load, activate, or render. */
   errors: Record<string, string>;
   isLoading: boolean;
+  /**
+   * Built-in features an enabled plugin has replaced (`core:grammar`, …). Core
+   * render sites consult this and stand down — see useCoreFeature.
+   */
+  shadowedCore: Set<string>;
+  /** Host services currently available (`host:languagetool`, `host:ai`, …). */
+  hostCapabilities: string[];
   refresh: () => Promise<void>;
   setEnabled: (id: string, enabled: boolean) => Promise<void>;
   /** Report a runtime failure (used by PluginBoundary). */
@@ -58,6 +65,21 @@ export const usePluginHost = (): PluginHostValue => {
   if (!ctx) throw new Error('usePluginHost must be used within PluginHost');
   return ctx;
 };
+
+/**
+ * "Should core still render its built-in <feature>?" — false once a plugin
+ * declares `replaces: ["core:grammar"]` and is enabled.
+ *
+ *   if (!useCoreFeature('core:grammar')) → the Grammar Check plugin owns this now
+ *
+ * This SHADOWS; it never writes the user's setting. Flipping their
+ * `chronicle_grammar_check` toggle off would persist, and uninstalling the
+ * plugin later would silently leave them with no grammar checking at all.
+ */
+export function useCoreFeature(capability: string): boolean {
+  const { shadowedCore } = usePluginHost();
+  return !shadowedCore.has(capability);
+}
 
 /**
  * Collect one slot across every loaded plugin, tagged with its owner so hosts
@@ -97,6 +119,8 @@ export const PluginHost: React.FC<{ children: React.ReactNode }> = ({ children }
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [activeView, setActiveView] = useState<PluginHostValue['activeView']>(null);
+  const [shadowedCore, setShadowedCore] = useState<Set<string>>(new Set());
+  const [hostCapabilities, setHostCapabilities] = useState<string[]>([]);
 
   // Live values the plugin context reads at call time — the context object is
   // handed to plugin code that may hold it across renders.
@@ -226,8 +250,11 @@ export const PluginHost: React.FC<{ children: React.ReactNode }> = ({ children }
   /** Fetch the installed list, then load ONLY the enabled ones. */
   const refresh = useCallback(async () => {
     try {
-      const list = await pluginService.list();
+      const { plugins: list, shadowedCore: shadowed, hostCapabilities: caps, activationOrder } =
+        await pluginService.list();
       setInstalled(list);
+      setShadowedCore(new Set(shadowed));
+      setHostCapabilities(caps);
 
       // Seed the synchronous state mirror from the server records.
       for (const p of list) {
@@ -238,26 +265,43 @@ export const PluginHost: React.FC<{ children: React.ReactNode }> = ({ children }
         }
       }
 
-      const enabled = list.filter((p) => p.enabled && !p.buildError);
+      const byId = new Map(list.map((p) => [p.id, p]));
       const results: LoadedPlugin[] = [];
       const nextErrors: Record<string, string> = {};
 
-      // Lazy by design: a disabled plugin's bundle is never fetched (v1
-      // eagerly imported every installed plugin regardless of its toggle).
+      // Bundles are independent of each other, so fetch them all at once…
+      const modules = new Map<string, ChroniclePlugin>();
       await Promise.all(
-        enabled.map(async (info) => {
+        activationOrder.map(async (id) => {
           try {
-            const plugin = await loadPluginModule(info.id);
-            // A throw in activate() disables the plugin instead of the app.
-            await plugin.activate?.(makeContext(info.id));
-            results.push({ info, plugin });
+            // Lazy by design: a disabled plugin's bundle is never fetched (v1
+            // eagerly imported every installed plugin regardless of its toggle).
+            modules.set(id, await loadPluginModule(id));
           } catch (err) {
-            nextErrors[info.id] = err instanceof Error ? err.message : String(err);
+            nextErrors[id] = err instanceof Error ? err.message : String(err);
           }
         }),
       );
 
-      // Surface build failures from the server alongside load failures.
+      // …but ACTIVATE in the server's dependency order, sequentially. A plugin
+      // that requires (or wants) another must see it already active — the Issues
+      // Panel subscribing to the findings bus before Grammar Check has published
+      // to it is the whole reason this isn't a Promise.all.
+      for (const id of activationOrder) {
+        const plugin = modules.get(id);
+        const info = byId.get(id);
+        if (!plugin || !info) continue;
+        try {
+          // A throw in activate() disables the plugin instead of the app.
+          await plugin.activate?.(makeContext(id));
+          results.push({ info, plugin });
+        } catch (err) {
+          nextErrors[id] = err instanceof Error ? err.message : String(err);
+        }
+      }
+
+      // Surface build failures (and dependency cycles, which the server reports
+      // as one) alongside load failures.
       for (const p of list) {
         if (p.buildError) nextErrors[p.id] = p.buildError;
       }
@@ -291,18 +335,24 @@ export const PluginHost: React.FC<{ children: React.ReactNode }> = ({ children }
   }, []);
 
   const setEnabled = useCallback(async (id: string, enabled: boolean) => {
+    // Ask the server FIRST. It enforces the dependency rules and can refuse with
+    // a 409 (unmet requirement, conflict, or another plugin depends on this one);
+    // tearing the plugin down before we knew the answer would leave it dead in a
+    // UI that still shows it enabled.
+    await pluginService.setEnabled(id, enabled);
+
     if (!enabled) {
-      // Deactivate before dropping it, so listeners/timers are released.
+      // Now it's really going: release listeners/timers.
       const entry = loaded.find((l) => l.plugin.id === id);
       try {
         entry?.plugin.deactivate?.();
       } catch {
-        /* ignore */
+        /* a failing teardown must not break the toggle */
       }
       // Close its view if it owned the one on screen.
       setActiveView((v) => (v?.pluginId === id ? null : v));
     }
-    await pluginService.setEnabled(id, enabled);
+
     setErrors((prev) => {
       const next = { ...prev };
       delete next[id];
@@ -321,6 +371,8 @@ export const PluginHost: React.FC<{ children: React.ReactNode }> = ({ children }
     loaded,
     errors,
     isLoading,
+    shadowedCore,
+    hostCapabilities,
     refresh,
     setEnabled,
     reportError,
@@ -329,7 +381,7 @@ export const PluginHost: React.FC<{ children: React.ReactNode }> = ({ children }
     activeView,
     openView,
     closeView,
-  }), [installed, loaded, errors, isLoading, refresh, setEnabled, reportError, makeContext, publishRuntime, activeView, openView, closeView]);
+  }), [installed, loaded, errors, isLoading, shadowedCore, hostCapabilities, refresh, setEnabled, reportError, makeContext, publishRuntime, activeView, openView, closeView]);
 
   return <HostContext.Provider value={value}>{children}</HostContext.Provider>;
 };
