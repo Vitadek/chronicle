@@ -22,6 +22,24 @@ interface LtMatch {
   replacements?: { value: string }[];
 }
 
+/**
+ * LanguageTool's own classification, with one correction.
+ *
+ * LT reports CONFUSED_WORDS hits (quiet/quite, their/there, lead/led) with
+ * `issueType: "misspelling"` even though the flagged word is spelled perfectly.
+ * Passing that through told authors their word didn't exist, and — because
+ * "misspelling" is the kind the custom dictionary filters on — invited them to
+ * "add to dictionary", which would whitelist a common English word and silence
+ * the rule everywhere. These are word-CHOICE suggestions (and, on older or
+ * deliberate diction, often false positives), so they get their own kind:
+ * advisory, dictionary-proof, still carrying LT's replacement.
+ */
+function kindFor(m: LtMatch): string {
+  if (m.rule?.category?.id === 'CONFUSED_WORDS') return 'confusion';
+  // issueType: misspelling | grammar | typographical | style | ...
+  return m.rule?.issueType || m.rule?.category?.id || 'grammar';
+}
+
 router.post('/check', async (req, res) => {
   const text = typeof req.body?.text === 'string' ? req.body.text : '';
   if (!text.trim()) {
@@ -45,8 +63,7 @@ router.post('/check', async (req, res) => {
     const hits = (data.matches || []).map((m) => ({
       start: m.offset,
       end: m.offset + m.length,
-      // issueType: misspelling | grammar | typographical | style | ...
-      kind: m.rule?.issueType || m.rule?.category?.id || 'grammar',
+      kind: kindFor(m),
       message: m.message,
       // Dictionary corrections (capped — LT can return dozens for a bad typo).
       // The Proofread view renders these as one-click spelling fixes.

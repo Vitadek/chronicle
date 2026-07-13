@@ -12,10 +12,16 @@ export interface GrammarHit {
   start: number;
   /** Char offset into the linted text (exclusive). */
   end: number;
-  /** LanguageTool issue type: misspelling | grammar | typographical | style | … */
+  /**
+   * misspelling | grammar | typographical | style | confusion | …
+   *
+   * Mostly LanguageTool's issue type, except `confusion` — word-confusion pairs
+   * (quiet/quite), which LT calls misspellings but which are correctly spelled
+   * words and must not be dictionary-suppressed. See server/routes/grammar.ts.
+   */
   kind: string;
   message: string;
-  /** Dictionary correction candidates (misspellings), capped server-side. */
+  /** Correction candidates (misspellings and confusions), capped server-side. */
   replacements?: string[];
 }
 
