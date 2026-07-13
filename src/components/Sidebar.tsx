@@ -8,6 +8,8 @@ import { Chapter, ManuscriptMetadata, UserProfile, ExportSettings, DEFAULT_EXPOR
 // visitor downloads before typing a word. Vite splits them into async chunks
 // fetched on the first export click.
 import { MarkdownExportDialog } from './MarkdownExportDialog';
+import { usePluginHost, usePluginSlot } from '../plugins/host/PluginHost';
+import { PluginBoundary } from '../plugins/host/PluginBoundary';
 import { countWords, readingMinutes, formatWordCount } from '../lib/wordCount';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { CoverArtUpload } from './CoverArtUpload';
@@ -321,12 +323,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeletePlotEdge,
   className 
 }) => {
-  const [view, setView] = useState<'chapters' | 'outline' | 'issues' | 'settings' | 'export' | 'profile'>('chapters');
+  const [view, setView] = useState<'chapters' | 'outline' | 'issues' | 'settings' | 'export' | 'profile' | string>('chapters');
 
   // If the Issues panel is switched off while it's the active tab, fall back.
   useEffect(() => {
     if (!isIssuesPanelEnabled && view === 'issues') setView('chapters');
   }, [isIssuesPanelEnabled, view]);
+  // Sidebar tabs contributed by plugins — the slot a migrated Issues panel or
+  // Outliner pane would occupy.
+  const pluginTabs = usePluginSlot('sidebarTabs');
+  const { makeContext, reportError } = usePluginHost();
+
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<'docx' | 'md' | 'html' | 'epub' | null>(null);
   const [showMarkdownDialog, setShowMarkdownDialog] = useState(false);
@@ -692,6 +699,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   Issues
                 </button>
               )}
+              {/* Plugin-contributed tabs (the Issues/Outliner migration slot) */}
+              {pluginTabs.map(({ pluginId, item }) => {
+                const key = `plugin:${pluginId}:${item.id}`;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setView(key)}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all",
+                      view === key ? (isDarkMode ? "bg-white/10 text-white" : "bg-white text-black shadow-sm") : "opacity-40"
+                    )}
+                  >
+                    <item.icon className="w-3 h-3" />
+                    {item.label}
+                  </button>
+                );
+              })}
               <button
                 onClick={() => setView('export')}
                 className={cn(
@@ -830,8 +854,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     grammarEnabled={isGrammarCheckEnabled}
                   />
                 </motion.div>
+              ) : view.startsWith('plugin:') ? (
+                <motion.div
+                  key={view}
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.98 }}
+                  className="flex flex-col flex-1 min-h-0 overflow-hidden"
+                >
+                  {(() => {
+                    const [, pluginId, tabId] = view.split(':');
+                    const tab = pluginTabs.find((t) => t.pluginId === pluginId && t.item.id === tabId);
+                    if (!tab) return null;
+                    return (
+                      <PluginBoundary pluginId={pluginId} onError={reportError}>
+                        {tab.item.render(makeContext(pluginId))}
+                      </PluginBoundary>
+                    );
+                  })()}
+                </motion.div>
               ) : view === 'export' ? (
-                <motion.div 
+                <motion.div
                   key="export"
                   initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}

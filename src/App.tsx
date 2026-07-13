@@ -5,7 +5,8 @@ import type { TenseShiftHit } from './lib/TenseShift';
 import type { GrammarMark } from './lib/Grammar';
 import { LibraryView } from './components/LibraryView';
 import { GlobalSettings } from './components/GlobalSettings';
-import { PluginProvider } from './plugins/PluginManager';
+import { PluginHost, usePublishPluginRuntime } from './plugins/host/PluginHost';
+import { PluginViewHost } from './plugins/host/PluginViewHost';
 import { manuscriptService } from './services/manuscriptService';
 import { startSync } from './services/syncService';
 import {
@@ -29,7 +30,7 @@ import { scheduleSettingsPush } from './lib/settingsSync';
 import { ProofreadView } from './components/ProofreadView';
 import type { Editor } from '@tiptap/react';
 
-export default function App() {
+function AppInner() {
   const [currentManuscriptId, setCurrentManuscriptId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -219,6 +220,20 @@ export default function App() {
   // spell-check icon. When true, the open manuscript renders in ProofreadView
   // instead of the normal Sidebar+EditorView.
   const [isProofreadMode, setIsProofreadMode] = useState(false);
+
+  // Keep the plugin host's view of the app current (editor, open manuscript, AI
+  // availability). The host sits above this component so plugins survive
+  // navigation; this is how it sees our live state.
+  usePublishPluginRuntime({
+    manuscriptId: currentManuscriptId,
+    editor: activeEditor,
+    aiConfig,
+    aiAvailable: isAiEnabled && !!aiConfig && !isAiUiHidden,
+    onToast: (message) => {
+      // No toast system yet; the editor's AI overlay is the closest surface.
+      console.info('[plugin]', message);
+    },
+  });
 
   // Signal that bumps whenever a remote sync delivers fresh data. The
   // LibraryView watches this to reload its manuscript list, and the editor
@@ -657,7 +672,7 @@ export default function App() {
     // over the library view entirely (closing returns to the library).
     if (isGlobalSettingsOpen) {
       return (
-        <PluginProvider syncSignal={remoteRevision} aiConfig={aiConfig}>
+        <>
           <GlobalSettings
             onClose={() => setIsGlobalSettingsOpen(false)}
             isDarkMode={isDarkMode}
@@ -682,11 +697,11 @@ export default function App() {
             exportSettings={exportSettings}
             onUpdateExportSettings={setExportSettings}
           />
-        </PluginProvider>
+        </>
       );
     }
     return (
-      <PluginProvider syncSignal={remoteRevision} aiConfig={aiConfig}>
+      <>
         <LibraryView
           onSelectManuscript={setCurrentManuscriptId}
           onCreateNew={handleCreateNew}
@@ -699,7 +714,7 @@ export default function App() {
           isDarkMode={isDarkMode}
           refreshSignal={remoteRevision}
         />
-      </PluginProvider>
+      </>
     );
   }
 
@@ -708,7 +723,7 @@ export default function App() {
   // state, so the existing debounced autosave persists them like any edit.
   if (isProofreadMode) {
     return (
-      <PluginProvider syncSignal={remoteRevision} aiConfig={aiConfig}>
+      <>
         <ProofreadView
           metadata={metadata}
           chapters={chapters}
@@ -722,7 +737,7 @@ export default function App() {
             setCurrentManuscriptId(null);
           }}
         />
-      </PluginProvider>
+      </>
     );
   }
 
@@ -732,7 +747,7 @@ export default function App() {
     : (chapters.find(c => c.id === currentChapterId) || chapters[0]);
 
   return (
-    <PluginProvider syncSignal={remoteRevision} aiConfig={aiConfig}>
+    <>
       <div className={cn(
         "relative flex w-full min-h-screen-dvh selection:bg-black/10 dark:selection:bg-white/10",
         isDarkMode ? "bg-manuscript-dark" : "bg-manuscript-light"
@@ -868,13 +883,31 @@ export default function App() {
         </main>
 
         {isSidebarOpen && (
-          <div 
+          <div
             className="fixed inset-0 bg-black/10 backdrop-blur-sm z-40"
             onClick={() => setIsSidebarOpen(false)}
           />
         )}
       </div>
-    </PluginProvider>
+    </>
+  );
+}
+
+/**
+ * The plugin host wraps the entire app exactly once, ABOVE every view branch.
+ * Plugins therefore load a single time and survive navigation between the
+ * library, the editor, and full-page views — v1 re-mounted its provider inside
+ * each branch, re-importing every plugin on every navigation.
+ *
+ * PluginViewHost renders a plugin's full-page `view` over the app when one is
+ * routed to (the slot a migrated Proofreader would use).
+ */
+export default function App() {
+  return (
+    <PluginHost>
+      <AppInner />
+      <PluginViewHost />
+    </PluginHost>
   );
 }
 

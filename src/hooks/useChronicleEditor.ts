@@ -9,6 +9,7 @@ import { Grammar, type GrammarMark } from '../lib/Grammar';
 import { AiGrammar } from '../lib/AiGrammar';
 import { ProofreadHighlight } from '../lib/ProofreadHighlight';
 import { buildCoreExtensions, EDITOR_KEYBOARD_ATTRS } from '../lib/editorExtensions';
+import type { AnyExtension } from '@tiptap/core';
 
 export interface UseChronicleEditorProps {
   content?: string;
@@ -33,6 +34,13 @@ export interface UseChronicleEditorProps {
   onGrammarMarks?: (marks: GrammarMark[], reason?: 'lint' | 'cleared') => void;
   /** Deterministic autocorrect + sentence-start capitalization (lib/AutoCorrect.ts). */
   isAutoCorrectEnabled?: boolean;
+  /**
+   * TipTap extensions contributed by enabled plugins (the `editorExtensions`
+   * slot). Passed in by the caller rather than read from context here, so this
+   * hook stays usable outside the plugin host (e.g. the mobile editor bundle).
+   * This is the seam the grammar/tense/autocorrect checkers will move through.
+   */
+  pluginExtensions?: AnyExtension[];
 }
 
 export function useChronicleEditor({ 
@@ -47,7 +55,8 @@ export function useChronicleEditor({
   onTenseShifts,
   isGrammarCheckEnabled = false,
   onGrammarMarks,
-  isAutoCorrectEnabled = true
+  isAutoCorrectEnabled = true,
+  pluginExtensions,
 }: UseChronicleEditorProps) {
   // Core prose + marks come from the shared module so the mobile editor bundle
   // stays in sync (smart quotes, no-stray-space, marks). The web-only
@@ -89,7 +98,12 @@ export function useChronicleEditor({
         return from !== to && state.doc.textBetween(from, to).trim().length > 0;
       },
     }),
-  ], [placeholder]);
+    // Plugin-contributed extensions last, so a plugin can layer on top of the
+    // core ones. TipTap can't hot-swap extensions, so the editor is re-created
+    // when this set changes (enabling/disabling a plugin) — see the dep below.
+    ...(pluginExtensions ?? []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [placeholder, pluginExtensions]);
 
   const editor = useEditor({
     extensions,

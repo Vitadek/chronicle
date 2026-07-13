@@ -13,7 +13,7 @@ import aiRouter from './routes/ai';
 import authRouter from './routes/auth';
 import coversRouter from './routes/covers';
 import pluginsRouter from './routes/plugins';
-import pluginsExternalRouter from './routes/plugins-external';
+import { seedPlugins } from './lib/pluginSeed';
 import { attachCollab } from './collab';
 import grammarRouter from './routes/grammar';
 import settingsRouter from './routes/settings';
@@ -28,6 +28,10 @@ async function start() {
 
   // Run any one-shot data imports before serving requests.
   importLegacyManuscripts();
+
+  // Copy any not-yet-installed bundled plugins into DATA_DIR and compile them,
+  // so a fresh or offline install is fully featured on first boot.
+  await seedPlugins();
 
   const app = express();
   app.disable('x-powered-by');
@@ -77,12 +81,9 @@ async function start() {
   app.use('/api/ai', aiRouter);
   app.use('/api/covers', coversRouter);
   app.use('/api/plugins', pluginsRouter);
-  app.use('/api/plugins-external', pluginsExternalRouter);
   app.use('/api/grammar', grammarRouter);
   app.use('/api/settings', settingsRouter);
 
-  // Serve side-loaded plugin files statically (for frontend dynamic import)
-  app.use('/plugins-raw', express.static(path.join(config.dataDir, 'plugins')));
 
   // -------- Static / dev server --------
   if (config.isProd) {

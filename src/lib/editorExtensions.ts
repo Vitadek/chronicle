@@ -2,7 +2,6 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import CharacterCount from '@tiptap/extension-character-count';
 import Typography from '@tiptap/extension-typography';
-import Underline from '@tiptap/extension-underline';
 import { AutoCorrect } from './AutoCorrect';
 import { Epigraph } from './Epigraph';
 import { CommentMark } from './Comment';
@@ -57,13 +56,15 @@ export function buildCoreExtensions(
   { placeholder = 'Once upon a time...', collabDocument }: CoreExtensionOptions = {},
 ): AnyExtension[] {
   const extensions: AnyExtension[] = [
+    // NOTE: StarterKit already registers Underline. Importing it again here
+    // produced a "Duplicate extension names found: ['underline']" warning and
+    // registered the mark twice (caught by scripts/schemaRoundTrip.test.ts).
     StarterKit.configure({
       heading: { levels: [1, 2, 3] },
       // Collaboration owns undo/redo via the Yjs undo manager; the two must
       // not both be active or history desyncs from the shared doc.
       ...(collabDocument ? { undoRedo: false } : {}),
     }),
-    Underline,
     Placeholder.configure({ placeholder }),
     CharacterCount,
     Typography,

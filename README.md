@@ -181,8 +181,36 @@ docker compose up -d --build
 - **Optional Nextcloud integration** — OAuth login plus a write-behind
   WebDAV mirror that puts readable copies of your manuscripts in your
   Nextcloud.
+- **Plugins** — install by pasting a git URL; the server compiles them for
+  you. See below.
 - **Container-first** — one image, one volume, no external services
   required.
+
+## Plugins
+
+Chronicle's bigger features are **plugins**: install what you want, skip what you
+don't, and keep the app light. A plugin is just a git repo — paste its URL into
+**Settings → Plugins → Install from git** and Chronicle clones and compiles it
+server-side. Nothing to build or download by hand.
+
+| Plugin | Install URL |
+|---|---|
+| **Proofreader** — guided spelling/grammar/AI-clarity pass | `https://github.com/Vitadek/chronicle-plugin-proofreader.git` |
+| **Outliner** — plot canvas, character sheets, synopsis, pop-out window | `https://github.com/Vitadek/chronicle-plugin-outliner.git` |
+| **Grammar Check** — LanguageTool squiggles + custom dictionary | `https://github.com/Vitadek/chronicle-plugin-grammar-check.git` |
+| **Tense Check** — flags narrative tense drift | `https://github.com/Vitadek/chronicle-plugin-tense-check.git` |
+| **Autocorrect** — deterministic fixes as you type | `https://github.com/Vitadek/chronicle-plugin-autocorrect.git` |
+| **Issues Panel** — every checker finding in one list | `https://github.com/Vitadek/chronicle-plugin-issues-panel.git` |
+| **Smart Thesaurus** — selection synonyms, offline-first | `https://github.com/Vitadek/chronicle-plugin-thesaurus.git` |
+
+Updates are explicit: **Check for updates** shows you the incoming commits before
+you apply them, and you can **pin** a plugin to a commit so nothing shifts
+mid-draft.
+
+Writing your own is a `chronicle-plugin.json` and one `.tsx` file — no build
+tooling. **[PLUGINS.md](./PLUGINS.md)** has the API, the contribution slots, and
+the trust model (plugins run with full privileges — install only repos you
+trust).
 
 See [BACKEND.md](./BACKEND.md) for architecture, the sync protocol, and
 deployment notes.

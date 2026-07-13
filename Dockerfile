@@ -39,6 +39,12 @@ COPY --from=builder /app/dist           ./dist
 COPY --from=builder /app/node_modules   ./node_modules
 COPY --from=builder /app/package.json   ./package.json
 
+# Bundled plugin sources. On first boot the server copies any not-yet-installed
+# one into /data/plugins and compiles it (esbuild ships as a runtime dep for
+# exactly this), so a fresh or air-gapped install is fully featured with no
+# network. They remain git-updatable afterwards.
+COPY --from=builder /app/plugins-seed   ./plugins-seed
+
 # Persist user data outside the image.
 RUN mkdir -p /data && chown -R node:node /data /app
 VOLUME ["/data"]

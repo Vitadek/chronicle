@@ -12,7 +12,9 @@ import type { AiConfig } from '../services/aiConfig';
 import { newAudioToken, registerAudioToken } from '../lib/Audio';
 import { loadCoverBlobUrl } from '../services/coverService';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { ActivePluginHost, usePlugins } from '../plugins/PluginManager';
+import { usePluginHost, usePluginSlot } from '../plugins/host/PluginHost';
+import { CompanionHost } from '../plugins/host/CompanionHost';
+import { SelectionActionsHost } from '../plugins/host/SelectionActionsHost';
 import tippy, { delegate } from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 import 'tippy.js/animations/shift-away.css';
@@ -110,7 +112,26 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [commentingAt, setCommentingAt] = useState<{ from: number; to: number; text: string } | null>(null);
   const [commentDraft, setCommentDraft] = useState('');
 
-  const { getPluginContext, enabledPlugins, allPlugins } = usePlugins();
+  const { makeContext, reportError } = usePluginHost();
+  const pluginSlashCommands = usePluginSlot('slashCommands');
+  const pluginSelectionActions = usePluginSlot('selectionActions');
+
+  // TipTap extensions contributed by enabled plugins (Autocorrect, Grammar
+  // Check, Tense Check…). Memoized on the loaded-plugin set so the editor is
+  // rebuilt only when plugins are enabled/disabled — not on every render.
+  const editorExtensionSlots = usePluginSlot('editorExtensions');
+  const pluginExtensions = useMemo(
+    () =>
+      editorExtensionSlots.flatMap(({ pluginId, item }) => {
+        try {
+          return item(makeContext(pluginId));
+        } catch (err) {
+          reportError(pluginId, err instanceof Error ? err.message : String(err));
+          return [];
+        }
+      }),
+    [editorExtensionSlots, makeContext, reportError],
+  );
 
   // Listen for double-clicks on comment markers (dispatched from src/lib/Comment.ts)
   useEffect(() => {
@@ -413,9 +434,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
     manuscriptId,
     aiConfig: aiConfig ?? null,
     handleAiAction,
-    getPluginContext,
-    enabledPlugins,
-    allPlugins,
+    makeContext,
+    reportError,
+    pluginSlashCommands,
   });
   useEffect(() => {
     liveRef.current = {
@@ -423,9 +444,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
       manuscriptId,
       aiConfig: aiConfig ?? null,
       handleAiAction,
-      getPluginContext,
-      enabledPlugins,
-      allPlugins,
+      makeContext,
+      reportError,
+      pluginSlashCommands,
     };
   });
 
@@ -440,16 +461,19 @@ export const EditorView: React.FC<EditorViewProps> = ({
         const { editor, range } = props;
         const live = liveRef.current;
 
-        // Check for Plugin Commands first
-        for (const pluginId of Array.from(live.enabledPlugins)) {
-          const manifest = live.allPlugins.find(p => p.id === pluginId);
-          if (manifest?.portalCommands?.[command]) {
-            popup[0].hide();
-            editor.commands.deleteRange(range);
-            const context = live.getPluginContext(pluginId, editor, live.manuscriptId, live.aiConfig);
-            await manifest.portalCommands[command](context, args);
-            return;
+        // Plugin-contributed commands win over the built-ins.
+        const match = live.pluginSlashCommands.find((c) => c.item.name === command);
+        if (match) {
+          popup[0].hide();
+          editor.commands.deleteRange(range);
+          try {
+            await match.item.run(live.makeContext(match.pluginId), args);
+          } catch (err) {
+            // A throwing command disables nothing, but it must not take the
+            // editor down with it.
+            live.reportError(match.pluginId, err instanceof Error ? err.message : String(err));
           }
+          return;
         }
 
         if (command === 'comment') {
@@ -564,6 +588,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
     onGrammarMarks,
     isTouchUI,
     commandLineOptions,
+    // Plugin extensions apply to the prose, not the title field.
+    pluginExtensions: isTitlePage ? undefined : pluginExtensions,
     onUpdate: (html) => {
       onUpdate(title, isTitlePage ? html.replace(/<[^>]*>?/gm, '').trim() : html);
       setLastActivity(Date.now());
@@ -819,7 +845,10 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
             {/* Plugin Layer */}
             {!collabEnabled && editor && !isTitlePage && (
-              <ActivePluginHost editor={editor} manuscriptId={manuscriptId} aiConfig={aiConfig} />
+              <>
+                <SelectionActionsHost editor={editor} isDarkMode={isDarkMode} />
+                <CompanionHost />
+              </>
             )}
 
             {/* Inline Comment Entry UI */}

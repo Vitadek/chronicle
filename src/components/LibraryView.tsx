@@ -7,6 +7,7 @@ import { loadCoverBlobUrl } from '../services/coverService';
 import { cn } from '../lib/utils';
 import { formatWordCount } from '../lib/wordCount';
 import { ImportDialog } from './ImportDialog';
+import { usePluginHost, usePluginSlot } from '../plugins/host/PluginHost';
 
 interface LibraryViewProps {
   onSelectManuscript: (id: string) => void;
@@ -60,6 +61,10 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
   const [manuscripts, setManuscripts] = useState<ManuscriptMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  // Per-book icon actions contributed by plugins — the slot a migrated
+  // Proofreader would use for its book-card entry point.
+  const libraryActions = usePluginSlot('libraryActions');
+  const { openView } = usePluginHost();
   // Two-step delete confirmation. The native confirm() dialog feels jarring
   // against this UI, and on touch devices an opacity-0 hover-only trash icon
   // is functionally invisible.
@@ -230,6 +235,21 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
                           >
                             <SpellCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                           </button>
+                          {/* Plugin-contributed card actions */}
+                          {libraryActions.map(({ pluginId, item }) => (
+                            <button
+                              key={`${pluginId}:${item.id}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                item.run(m.id, (viewId, manuscriptId) => openView(pluginId, viewId, manuscriptId));
+                              }}
+                              className="p-2 opacity-40 hover:opacity-100 hover:text-blue-500 transition-all"
+                              aria-label={item.tooltip}
+                              title={item.tooltip}
+                            >
+                              <item.icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                            </button>
+                          ))}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();

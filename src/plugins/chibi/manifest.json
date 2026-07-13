@@ -1,7 +1,0 @@
-{
-  "id": "chronicle.chibi.assistant",
-  "name": "Chronicle Bot",
-  "description": "Pixel-art workspace interaction avatar companion.",
-  "entry": "ChibiCompanion.tsx",
-  "defaultState": { "petName": "ChronicleBot", "totalInteractions": 0 }
-}

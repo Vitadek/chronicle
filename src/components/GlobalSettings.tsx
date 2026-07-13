@@ -6,8 +6,7 @@ import { UserProfile, ExportSettings, HtmlExportTheme, EpubCoverSource } from '.
 import { AiConfig, AiProvider } from '../services/aiConfig';
 import { ProviderStatus } from '../services/aiService';
 import { AiSettingsPanel } from './AiSettingsPanel';
-import { usePlugins } from '../plugins/PluginManager';
-import { pluginExternalService } from '../services/pluginExternalService';
+import { PluginsPanel } from './PluginsPanel';
 import { MarkdownFrontMatterFields } from './MarkdownFrontMatterFields';
 
 interface GlobalSettingsProps {
@@ -48,10 +47,6 @@ export function GlobalSettings({
   exportSettings,
   onUpdateExportSettings,
 }: GlobalSettingsProps) {
-  const { enabledPlugins, allPlugins, togglePlugin, refreshPlugins } = usePlugins();
-  const [isInstalling, setIsInstalling] = React.useState(false);
-  const [installError, setInstallError] = React.useState<string | null>(null);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Section-scoped updaters keep the nested export-settings edits terse.
   const updateHtml = (patch: Partial<ExportSettings['html']>) =>
@@ -60,34 +55,6 @@ export function GlobalSettings({
     onUpdateExportSettings({ ...exportSettings, markdown: { ...exportSettings.markdown, ...patch } });
   const updateEpub = (patch: Partial<ExportSettings['epub']>) =>
     onUpdateExportSettings({ ...exportSettings, epub: { ...exportSettings.epub, ...patch } });
-
-  const handleUploadPlugin = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsInstalling(true);
-    setInstallError(null);
-    try {
-      await pluginExternalService.install(file);
-      await refreshPlugins();
-      // Reset input
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    } catch (err: any) {
-      setInstallError(err.message || 'Failed to install plugin');
-    } finally {
-      setIsInstalling(false);
-    }
-  };
-
-  const handleDeletePlugin = async (pluginId: string) => {
-    if (!window.confirm(`Are you sure you want to remove the plugin "${pluginId}"?`)) return;
-    try {
-      await pluginExternalService.delete(pluginId);
-      await refreshPlugins();
-    } catch (err: any) {
-      alert(`Failed to delete plugin: ${err.message}`);
-    }
-  };
 
   const inputClass = cn(
     'w-full px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
@@ -132,96 +99,8 @@ export function GlobalSettings({
         </div>
 
         <div className="space-y-14">
-          {/* Plugins Section */}
-          <section className="space-y-6">
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-bold opacity-40">
-                <Box className="w-3 h-3" />
-                <span>Workstation Plugins</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleUploadPlugin}
-                  accept=".zip"
-                  className="hidden"
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isInstalling}
-                  className={cn(
-                    'flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[9px] uppercase font-black tracking-widest transition-all',
-                    isDarkMode ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-black/5 hover:bg-black/10 text-black',
-                    isInstalling && 'opacity-50 cursor-wait',
-                  )}
-                >
-                  {isInstalling ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-                  Install
-                </button>
-              </div>
-            </div>
-
-            {installError && (
-              <p className="px-4 py-2 bg-red-500/10 text-red-500 text-[10px] rounded-xl border border-red-500/20 leading-relaxed mx-1">
-                {installError}
-              </p>
-            )}
-
-            <div className="space-y-3">
-              {allPlugins.length === 0 && (
-                <p className="text-[10px] opacity-30 italic px-4">No plugins available.</p>
-              )}
-              {allPlugins.map((plugin) => {
-                const isEnabled = enabledPlugins.has(plugin.id);
-                const isExternal = !['chronicle.chibi.assistant'].includes(plugin.id);
-
-                return (
-                  <div
-                    key={plugin.id}
-                    className={cn(
-                      'px-4 py-4 rounded-2xl border transition-all flex items-start gap-4 group/item',
-                      isEnabled
-                        ? 'bg-blue-500/5 border-blue-500/10'
-                        : 'bg-black/5 dark:bg-white/5 border-transparent opacity-60',
-                    )}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <h4 className={cn('text-xs font-bold mb-1', isDarkMode ? 'text-white' : 'text-black')}>
-                        {plugin.name}
-                      </h4>
-                      <p className="text-[10px] leading-relaxed opacity-40">{plugin.description}</p>
-                    </div>
-
-                    <div className="flex flex-col gap-2 items-end">
-                      <button
-                        onClick={() => togglePlugin(plugin.id)}
-                        className={cn(
-                          'px-3 py-1.5 rounded-lg text-[9px] uppercase font-black tracking-widest transition-all',
-                          isEnabled
-                            ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20'
-                            : 'bg-black/10 dark:bg-white/10 opacity-40 hover:opacity-100',
-                        )}
-                      >
-                        {isEnabled ? 'Enabled' : 'Enable'}
-                      </button>
-
-                      {isExternal && (
-                        <button
-                          onClick={() => handleDeletePlugin(plugin.id)}
-                          className="p-1 rounded opacity-0 group-hover/item:opacity-30 hover:opacity-100 touch:opacity-50 hover:bg-red-500/10 hover:text-red-500 transition-all"
-                          title="Delete plugin"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+          {/* Plugins — git-installed, first-class. See PluginsPanel. */}
+          <PluginsPanel isDarkMode={isDarkMode} />
 
           {/* Export Defaults Section */}
           <section className="space-y-6">
