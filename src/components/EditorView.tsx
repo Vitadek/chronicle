@@ -206,6 +206,8 @@ export const EditorView: React.FC<EditorViewProps> = ({
       setIsAiLoading(true);
       try {
         const blobUrl = await getAiSpeech(text, aiConfig);
+        // The await crossed ticks; the editor may have been torn down since.
+        if (editor.isDestroyed) return;
         const token = newAudioToken();
         registerAudioToken(token, blobUrl);
         // Apply the audio mark across the chosen range.
@@ -607,7 +609,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
     return () => onEditorReady?.(null);
   }, [editor, onEditorReady]);
 
-  const words = (titleEditor?.storage.characterCount.words() || 0) + (editor?.storage.characterCount.words() || 0);
+  // Optional-chain characterCount too: destroy() resets extension storage to
+  // {}, and this line runs during render with whatever instance state holds.
+  const words = (titleEditor?.storage.characterCount?.words() || 0) + (editor?.storage.characterCount?.words() || 0);
 
   // Zenith Trigger Effect: Only trigger after 3 words have been typed
   useEffect(() => {
@@ -683,28 +687,31 @@ export const EditorView: React.FC<EditorViewProps> = ({
     };
   }, [editor]);
 
-  // Sync content on chapter switch
+  // Sync content on chapter switch.
+  // The isDestroyed guard is load-bearing: TipTap v3 destroys editors
+  // ASYNCHRONOUSLY on unmount/recreation and nulls the schema, so a destroyed
+  // instance can still sit in state when this effect fires — getHTML() on it
+  // throws (scripts/destroyedEditorGuard.test.ts pins that behavior). The new
+  // editor mounts with the right content anyway, so skipping is correct.
   useEffect(() => {
-    if (editor) {
-      if (isTitlePage) {
-        const currentText = editor.getText().trim();
-        if (currentText !== content.trim()) {
-          editor.commands.setContent(`<p>${content}</p>`);
-        }
-      } else if (content !== editor.getHTML()) {
-        editor.commands.setContent(content);
+    if (!editor || editor.isDestroyed) return;
+    if (isTitlePage) {
+      const currentText = editor.getText().trim();
+      if (currentText !== content.trim()) {
+        editor.commands.setContent(`<p>${content}</p>`);
       }
+    } else if (content !== editor.getHTML()) {
+      editor.commands.setContent(content);
     }
   }, [content, editor, isTitlePage]);
 
   useEffect(() => {
-    if (titleEditor) {
-      const currentText = titleEditor.getText().trim();
-      const targetText = title.trim();
-      
-      if (currentText !== targetText) {
-        titleEditor.commands.setContent(`<h1>${title}</h1>`);
-      }
+    if (!titleEditor || titleEditor.isDestroyed) return;
+    const currentText = titleEditor.getText().trim();
+    const targetText = title.trim();
+
+    if (currentText !== targetText) {
+      titleEditor.commands.setContent(`<h1>${title}</h1>`);
     }
   }, [title, titleEditor, isTitlePage]);
 
