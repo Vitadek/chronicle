@@ -1,13 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Sidebar } from './components/Sidebar';
-import { EditorView } from './components/EditorView';
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { TenseShiftHit } from './lib/TenseShift';
 import type { GrammarMark } from './lib/Grammar';
 import { LibraryView } from './components/LibraryView';
-import { GlobalSettings } from './components/GlobalSettings';
 import { PluginHost, usePluginHost, usePublishPluginRuntime } from './plugins/host/PluginHost';
 import { PluginViewHost } from './plugins/host/PluginViewHost';
-import { manuscriptService } from './services/manuscriptService';
+import { ManuscriptServiceError, manuscriptService } from './services/manuscriptService';
 import { startSync } from './services/syncService';
 import {
   AiConfig,
@@ -27,11 +24,130 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Chapter, ManuscriptMetadata, UserProfile, Manuscript, Character, PlotNode, PlotEdge, ExportSettings, DEFAULT_EXPORT_SETTINGS } from './types';
 import { countWords } from './lib/wordCount';
 import { scheduleSettingsPush } from './lib/settingsSync';
-import { ProofreadView } from './components/ProofreadView';
+import {
+  clearManuscriptConflictDraft,
+  clearManuscriptDraft,
+  readManuscriptDraft,
+} from './lib/manuscriptDraftJournal';
+import {
+  manuscriptFingerprint,
+  useManuscriptAutosave,
+  type ManuscriptSaveStatus,
+} from './hooks/useManuscriptAutosave';
 import type { Editor } from '@tiptap/react';
 
+const Sidebar = lazy(() => import('./components/Sidebar').then((m) => ({ default: m.Sidebar })));
+const EditorView = lazy(() => import('./components/EditorView').then((m) => ({ default: m.EditorView })));
+const GlobalSettings = lazy(() => import('./components/GlobalSettings').then((m) => ({ default: m.GlobalSettings })));
+const ProofreadView = lazy(() => import('./components/ProofreadView').then((m) => ({ default: m.ProofreadView })));
+
+interface OpenSession {
+  manuscriptId: string;
+  key: number;
+}
+
+function RouteFallback({ isDarkMode, label = 'Loading…' }: { isDarkMode: boolean; label?: string }) {
+  return (
+    <div className={cn(
+      'min-h-screen-dvh w-full flex items-center justify-center text-xs uppercase tracking-[0.2em]',
+      isDarkMode ? 'bg-manuscript-dark text-white/40' : 'bg-manuscript-light text-black/40',
+    )}>
+      {label}
+    </div>
+  );
+}
+
+function SaveStatus({
+  status,
+  error,
+  onRetry,
+  canReloadServerVersion,
+  hasConflictRecovery,
+  onReloadServerVersion,
+  onRestoreConflictDraft,
+  onDiscardConflictDraft,
+}: {
+  status: ManuscriptSaveStatus;
+  error: string | null;
+  onRetry: () => void;
+  canReloadServerVersion: boolean;
+  hasConflictRecovery: boolean;
+  onReloadServerVersion: () => void;
+  onRestoreConflictDraft: () => void;
+  onDiscardConflictDraft: () => void;
+}) {
+  const labels: Record<ManuscriptSaveStatus, string> = {
+    saved: 'Saved',
+    dirty: 'Unsaved changes',
+    saving: 'Saving…',
+    offline: 'Offline — draft kept locally',
+    error: 'Save failed',
+    conflict: 'Save conflict',
+    'draft-error': 'Local draft unavailable',
+  };
+  const canRetry = status === 'offline' || status === 'error' || status === 'draft-error';
+  const label = hasConflictRecovery && status === 'saved'
+    ? 'Server loaded — local copy kept'
+    : labels[status];
+
+  return (
+    <div
+      aria-live="polite"
+      title={error ?? label}
+      className={cn(
+        'fixed right-4 bottom-4 z-[80] flex items-center gap-2 rounded-full border px-3 py-2 text-[10px] font-bold uppercase tracking-widest shadow-lg backdrop-blur-md',
+        status === 'error' || status === 'conflict' || status === 'draft-error'
+          ? 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300'
+          : 'border-black/10 bg-white/80 text-black/60 dark:border-white/10 dark:bg-black/70 dark:text-white/60',
+      )}
+    >
+      <span className={cn(
+        'h-1.5 w-1.5 rounded-full',
+        status === 'saved' ? 'bg-emerald-500' :
+          status === 'saving' ? 'bg-blue-500 animate-pulse' :
+            status === 'offline' ? 'bg-amber-500' :
+              status === 'error' || status === 'conflict' || status === 'draft-error'
+                ? 'bg-red-500'
+                : 'bg-black/30 dark:bg-white/30',
+      )} />
+      <span>{label}</span>
+      {canRetry && (
+        <button onClick={onRetry} className="underline underline-offset-2 hover:opacity-70">
+          Retry
+        </button>
+      )}
+      {status === 'conflict' && canReloadServerVersion && (
+        <button onClick={onReloadServerVersion} className="underline underline-offset-2 hover:opacity-70">
+          Reload server version
+        </button>
+      )}
+      {hasConflictRecovery && (
+        <>
+          <button onClick={onRestoreConflictDraft} className="underline underline-offset-2 hover:opacity-70">
+            Restore local edits
+          </button>
+          <button onClick={onDiscardConflictDraft} className="underline underline-offset-2 hover:opacity-70">
+            Discard copy
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AppInner() {
-  const [currentManuscriptId, setCurrentManuscriptId] = useState<string | null>(null);
+  const sessionSequenceRef = useRef(0);
+  const openSessionRef = useRef<OpenSession | null>(null);
+  // Keep the latest server acknowledgements outside React's render cycle so
+  // a destructive action immediately following an awaited autosave uses the
+  // revision returned by that save, not the revision captured by the click's
+  // older render.
+  const metadataRevisionRef = useRef<number | undefined>(undefined);
+  const chapterRevisionsRef = useRef(new Map<string, number | undefined>());
+  const [openSession, setOpenSession] = useState<OpenSession | null>(null);
+  const currentManuscriptId = openSession?.manuscriptId ?? null;
+  const [hydratedSessionKey, setHydratedSessionKey] = useState<number | null>(null);
+  const [serverBaselineFingerprint, setServerBaselineFingerprint] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return localStorage.getItem('chronicle_theme') === 'dark';
@@ -221,6 +337,40 @@ function AppInner() {
   // instead of the normal Sidebar+EditorView.
   const [isProofreadMode, setIsProofreadMode] = useState(false);
 
+  const clearOpenDocument = useCallback(() => {
+    metadataRevisionRef.current = undefined;
+    chapterRevisionsRef.current.clear();
+    setHydratedSessionKey(null);
+    setServerBaselineFingerprint(null);
+    setMetadata(null);
+    setChapters([]);
+    setCurrentChapterId('');
+    setCharacters([]);
+    setPlotNodes([]);
+    setPlotEdges([]);
+    setActiveEditor(null);
+  }, []);
+
+  /**
+   * Start an immutable open session. Clearing the old document in the same
+   * React batch is essential: an ID must never render with another book's
+   * metadata while its GET is in flight.
+   */
+  const openManuscript = useCallback((manuscriptId: string, proofread = false) => {
+    const next = { manuscriptId, key: ++sessionSequenceRef.current };
+    openSessionRef.current = next;
+    clearOpenDocument();
+    setIsProofreadMode(proofread);
+    setOpenSession(next);
+  }, [clearOpenDocument]);
+
+  const closeManuscriptImmediately = useCallback(() => {
+    openSessionRef.current = null;
+    setOpenSession(null);
+    setIsProofreadMode(false);
+    clearOpenDocument();
+  }, [clearOpenDocument]);
+
   /**
    * Core features a plugin has taken over (manifest `replaces: ["core:grammar"]`).
    *
@@ -273,50 +423,181 @@ function AppInner() {
           resp.pull.manuscripts.length +
           resp.pull.chapters.length +
           (resp.pull.profile ? 1 : 0);
-        if (touched > 0) setRemoteRevision((n) => n + 1);
+        // A cursor reset means the server was restored. Refresh even when the
+        // authoritative full-state replay is empty so stale library state is
+        // not left visible.
+        if (touched > 0 || resp.reset) setRemoteRevision((n) => n + 1);
       },
     });
     return stop;
   }, []);
 
+  const manuscriptForSave = useMemo<Manuscript | null>(() => {
+    if (
+      !openSession ||
+      hydratedSessionKey !== openSession.key ||
+      !metadata ||
+      chapters.length === 0
+    ) {
+      return null;
+    }
+    return { metadata, chapters };
+  }, [chapters, hydratedSessionKey, metadata, openSession]);
+
+  const handleSaveAcknowledged = useCallback((saved: Manuscript, sessionKey: number) => {
+    if (openSessionRef.current?.key !== sessionKey) return;
+    metadataRevisionRef.current = saved.metadata?.revision;
+    chapterRevisionsRef.current = new Map(
+      saved.chapters.map((chapter) => [chapter.id, chapter.revision]),
+    );
+    // Merge only server concurrency tokens. Replacing content here could
+    // clobber editor transactions made while the PUT was in flight.
+    setMetadata((prev) => {
+      const revision = saved.metadata?.revision;
+      return prev && revision !== undefined && prev.revision !== revision
+        ? { ...prev, revision }
+        : prev;
+    });
+    if (saved.chapters) {
+      const revisions = new Map(saved.chapters.map((chapter) => [chapter.id, chapter.revision]));
+      setChapters((prev) => prev.map((chapter) => {
+        const revision = revisions.get(chapter.id);
+        return revision !== undefined && revision !== chapter.revision
+          ? { ...chapter, revision }
+          : chapter;
+      }));
+    }
+  }, []);
+
+  const replaceOpenManuscript = useCallback((
+    replacement: Manuscript,
+    sessionKey: number,
+    authoritative: boolean,
+  ) => {
+    if (openSessionRef.current?.key !== sessionKey) return;
+    metadataRevisionRef.current = replacement.metadata.revision;
+    chapterRevisionsRef.current = new Map(
+      replacement.chapters.map((chapter) => [chapter.id, chapter.revision]),
+    );
+    if (authoritative) setServerBaselineFingerprint(manuscriptFingerprint(replacement));
+    setMetadata(replacement.metadata);
+    setChapters(replacement.chapters);
+    setCurrentChapterId((current) =>
+      current === 'title-page' || replacement.chapters.some((chapter) => chapter.id === current)
+        ? current
+        : replacement.chapters[0]?.id ?? 'title-page'
+    );
+  }, []);
+
+  const autosave = useManuscriptAutosave({
+    sessionKey: manuscriptForSave ? hydratedSessionKey : null,
+    manuscriptId: manuscriptForSave ? currentManuscriptId : null,
+    manuscript: manuscriptForSave,
+    baselineFingerprint: serverBaselineFingerprint,
+    onSaved: handleSaveAcknowledged,
+    onConflictReloaded: (authoritative, sessionKey) => {
+      replaceOpenManuscript(authoritative, sessionKey, true);
+    },
+    onConflictDraftRestored: (draft, sessionKey) => {
+      replaceOpenManuscript(draft, sessionKey, false);
+    },
+  });
+
+  const reloadServerVersion = useCallback(() => {
+    const confirmed = window.confirm(
+      'Reload the authoritative server version? Chronicle will first keep your current local edits as a separate recovery copy, and will not overwrite the server with them.',
+    );
+    if (confirmed) autosave.reloadServerVersion();
+  }, [autosave.reloadServerVersion]);
+
+  const restoreConflictDraft = useCallback(() => {
+    const confirmed = window.confirm(
+      'Restore the preserved local edits into the editor? This replaces the currently displayed server text and resumes autosave using the latest server revisions.',
+    );
+    if (confirmed) autosave.restoreConflictDraft();
+  }, [autosave.restoreConflictDraft]);
+
+  const discardConflictDraft = useCallback(() => {
+    const confirmed = window.confirm(
+      'Permanently discard the preserved local conflict copy? The server version will remain unchanged.',
+    );
+    if (confirmed) autosave.discardConflictDraft();
+  }, [autosave.discardConflictDraft]);
+
+  const leaveManuscript = useCallback(async () => {
+    const saved = await autosave.flush();
+    if (!saved) {
+      const recoveryConfirmed = autosave.hasRecoveryDraft();
+      const leaveAnyway = window.confirm(
+        recoveryConfirmed
+          ? 'Chronicle could not sync your latest changes. The exact current version is preserved in the local draft journal. Leave this manuscript anyway?'
+          : 'Chronicle could not sync your latest changes and could not confirm a recovery copy. Leaving now may lose them. Leave this manuscript anyway?',
+      );
+      if (!leaveAnyway) return;
+    }
+    closeManuscriptImmediately();
+  }, [autosave.flush, autosave.hasRecoveryDraft, closeManuscriptImmediately]);
+
   // Load manuscript from server
   useEffect(() => {
-    if (!currentManuscriptId) {
-      setMetadata(null);
-      setChapters([]);
-      setCurrentChapterId('');
-      setCharacters([]);
-      setPlotNodes([]);
-      setPlotEdges([]);
-      return;
-    }
+    if (!openSession) return;
+
+    const { manuscriptId, key: sessionKey } = openSession;
+    const controller = new AbortController();
 
     const load = async () => {
       try {
-        const manuscript = await manuscriptService.get(currentManuscriptId);
+        const serverManuscript = await manuscriptService.get(manuscriptId, controller.signal);
+        if (controller.signal.aborted || openSessionRef.current?.key !== sessionKey) return;
+
+        const baseline = manuscriptFingerprint(serverManuscript);
+        let manuscript = serverManuscript;
+        const draft = readManuscriptDraft(manuscriptId);
+        if (draft) {
+          const draftFingerprint = manuscriptFingerprint(draft.manuscript);
+          if (draftFingerprint === baseline) {
+            clearManuscriptDraft(manuscriptId);
+          } else if (window.confirm(
+            'Chronicle found changes from an interrupted or failed save. Restore the local draft?',
+          )) {
+            manuscript = draft.manuscript;
+          } else {
+            clearManuscriptDraft(manuscriptId);
+          }
+        }
+
+        if (controller.signal.aborted || openSessionRef.current?.key !== sessionKey) return;
+        setServerBaselineFingerprint(baseline);
+        metadataRevisionRef.current = manuscript.metadata.revision;
+        chapterRevisionsRef.current = new Map(
+          manuscript.chapters.map((chapter) => [chapter.id, chapter.revision]),
+        );
         setMetadata(manuscript.metadata);
         setChapters(manuscript.chapters);
         setCurrentChapterId(manuscript.chapters[0]?.id || 'title-page');
+        setHydratedSessionKey(sessionKey);
       } catch (error) {
+        if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return;
+        if (openSessionRef.current?.key !== sessionKey) return;
         console.error(error);
         alert('Failed to load manuscript');
-        setCurrentManuscriptId(null);
+        closeManuscriptImmediately();
       }
     };
-    load();
+    void load();
 
     // Hydrate outline-pane state from localStorage. (Sync schema for these
     // entities is a follow-up; for now they're device-local.)
     try {
-      const c = localStorage.getItem(`chronicle_chars_${currentManuscriptId}`);
+      const c = localStorage.getItem(`chronicle_chars_${manuscriptId}`);
       setCharacters(c ? JSON.parse(c) : []);
     } catch { setCharacters([]); }
     try {
-      const n = localStorage.getItem(`chronicle_plotnodes_${currentManuscriptId}`);
+      const n = localStorage.getItem(`chronicle_plotnodes_${manuscriptId}`);
       setPlotNodes(n ? JSON.parse(n) : []);
     } catch { setPlotNodes([]); }
     try {
-      const e = localStorage.getItem(`chronicle_plotedges_${currentManuscriptId}`);
+      const e = localStorage.getItem(`chronicle_plotedges_${manuscriptId}`);
       setPlotEdges(e ? JSON.parse(e) : []);
     } catch { setPlotEdges([]); }
 
@@ -328,24 +609,8 @@ function AppInner() {
     // currently-open manuscript on every sync tick would clobber in-progress
     // edits the user hasn't auto-saved yet. The library view does react to
     // remoteRevision so adds/deletes from other devices show up there.
-  }, [currentManuscriptId]);
-
-  // Auto-save manuscript to server
-  useEffect(() => {
-    if (!currentManuscriptId || !metadata || chapters.length === 0) return;
-
-    const timer = setTimeout(async () => {
-      try {
-        const manuscript: Manuscript = { metadata, chapters };
-        await manuscriptService.update(currentManuscriptId, manuscript);
-        console.log('Manuscript auto-saved');
-      } catch (error) {
-        console.error('Auto-save failed:', error);
-      }
-    }, 2000);
-
-    return () => clearTimeout(timer);
-  }, [metadata, chapters, currentManuscriptId]);
+    return () => controller.abort();
+  }, [closeManuscriptImmediately, openSession]);
 
   // Prefill contact name from author if empty
   useEffect(() => {
@@ -567,7 +832,7 @@ function AppInner() {
 
     try {
       await manuscriptService.create(newManuscript);
-      setCurrentManuscriptId(id);
+      openManuscript(id);
     } catch (error) {
       console.error(error);
       alert('Failed to create manuscript');
@@ -645,17 +910,76 @@ function AppInner() {
   }, [chapters]);
 
   const handleReorderChapters = useCallback((newChapters: Chapter[]) => {
-    setChapters(newChapters);
+    const now = Date.now();
+    setChapters((previous) => {
+      const oldPositions = new Map(previous.map((chapter, index) => [chapter.id, index]));
+      return newChapters.map((chapter, index) =>
+        oldPositions.get(chapter.id) !== index
+          ? { ...chapter, lastModified: now }
+          : chapter,
+      );
+    });
+    setMetadata((prev) => prev ? { ...prev, lastModified: now } : prev);
   }, []);
 
-  const handleDeleteChapter = useCallback((id: string) => {
-    setChapters(prev => {
-      if (prev.length <= 1) return prev;
-      const filtered = prev.filter(c => c.id !== id);
-      if (currentChapterId === id) setCurrentChapterId(filtered[0].id);
-      return filtered;
-    });
-  }, [currentChapterId]);
+  const deletingChaptersRef = useRef(new Set<string>());
+  const handleDeleteChapter = useCallback(async (id: string) => {
+    const session = openSessionRef.current;
+    const chapter = chapters.find((candidate) => candidate.id === id);
+    if (!session || !chapter || chapters.length <= 1 || deletingChaptersRef.current.has(id)) return;
+
+    deletingChaptersRef.current.add(id);
+    try {
+      // An older in-flight whole-manuscript PUT still contains this chapter.
+      // Finish it before DELETE so it cannot recreate the row afterward.
+      const flushed = await autosave.flush();
+      if (!flushed) {
+        alert('Chronicle could not save the manuscript, so the chapter was not deleted. Retry after the save issue is resolved.');
+        return;
+      }
+      if (openSessionRef.current?.key !== session.key) return;
+      autosave.pause();
+
+      let retry = true;
+      while (retry) {
+        try {
+          const deleted = await manuscriptService.deleteChapter(
+            session.manuscriptId,
+            id,
+            chapterRevisionsRef.current.get(id) ?? chapter.revision,
+          );
+          if (openSessionRef.current?.key !== session.key) return;
+          chapterRevisionsRef.current.delete(id);
+          if (deleted.manuscriptRevision !== undefined) {
+            metadataRevisionRef.current = deleted.manuscriptRevision;
+          }
+          setChapters((prev) => {
+            const filtered = prev.filter((candidate) => candidate.id !== id);
+            if (currentChapterId === id && filtered.length > 0) setCurrentChapterId(filtered[0].id);
+            return filtered;
+          });
+          setMetadata((prev) => prev ? {
+            ...prev,
+            lastModified: Date.now(),
+            revision: deleted.manuscriptRevision ?? prev.revision,
+          } : prev);
+          return;
+        } catch (error) {
+          const conflict = error instanceof ManuscriptServiceError && error.status === 409;
+          if (conflict) {
+            alert('This chapter changed on another device and was not deleted. Return to the library and reopen the manuscript before retrying.');
+            return;
+          }
+          retry = window.confirm(
+            `${error instanceof Error ? error.message : 'Failed to delete chapter'}. Retry the deletion?`,
+          );
+        }
+      }
+    } finally {
+      autosave.resume();
+      deletingChaptersRef.current.delete(id);
+    }
+  }, [autosave.flush, autosave.pause, autosave.resume, chapters, currentChapterId]);
 
   /**
    * Manuscript-wide word count, recomputed when chapter content changes.
@@ -666,10 +990,27 @@ function AppInner() {
    * loads metadata, not full chapter content) can display it without a
    * second fetch.
    */
-  const totalWordCount = useMemo(
-    () => chapters.reduce((sum, c) => sum + countWords(c.content), 0),
-    [chapters],
-  );
+  const chapterWordCountCacheRef = useRef(new Map<string, { content: string; words: number }>());
+  const totalWordCount = useMemo(() => {
+    const cache = chapterWordCountCacheRef.current;
+    const liveIds = new Set<string>();
+    let total = 0;
+    for (const chapter of chapters) {
+      liveIds.add(chapter.id);
+      const cached = cache.get(chapter.id);
+      if (cached?.content === chapter.content) {
+        total += cached.words;
+      } else {
+        const words = countWords(chapter.content);
+        cache.set(chapter.id, { content: chapter.content, words });
+        total += words;
+      }
+    }
+    for (const id of cache.keys()) {
+      if (!liveIds.has(id)) cache.delete(id);
+    }
+    return total;
+  }, [chapters]);
 
   useEffect(() => {
     setMetadata(prev =>
@@ -681,21 +1022,39 @@ function AppInner() {
 
   const handleDeleteManuscript = useCallback(async () => {
     if (!currentManuscriptId) return;
+    const manuscriptId = currentManuscriptId;
+    let deleted = false;
+    autosave.pause();
     try {
-      await manuscriptService.delete(currentManuscriptId);
-      setCurrentManuscriptId(null);
+      // A PUT completing after DELETE would resurrect the manuscript. Drain
+      // it first, then suspend the local queue before issuing the tombstone.
+      // Keep the editor mounted until DELETE succeeds so a failed request can
+      // resume the exact in-memory author state rather than re-fetching it.
+      await autosave.discard();
+      const baseRevision = metadataRevisionRef.current ?? metadata?.revision;
+      await manuscriptService.delete(manuscriptId, baseRevision);
+      deleted = true;
+      clearManuscriptDraft(manuscriptId);
+      clearManuscriptConflictDraft(manuscriptId);
+      closeManuscriptImmediately();
     } catch (error) {
       console.error(error);
-      alert('Failed to delete manuscript');
+      alert(`${error instanceof Error ? error.message : 'Failed to delete manuscript'}. The manuscript remains open and your local edits were not discarded.`);
+    } finally {
+      if (!deleted) autosave.resume();
     }
-  }, [currentManuscriptId]);
+  }, [autosave.discard, autosave.pause, autosave.resume, closeManuscriptImmediately, currentManuscriptId, metadata?.revision]);
+
+  if (currentManuscriptId && (!metadata || hydratedSessionKey !== openSession?.key)) {
+    return <RouteFallback isDarkMode={isDarkMode} label="Opening manuscript…" />;
+  }
 
   if (!currentManuscriptId || !metadata) {
     // Global Settings is a full page, not an overlay: when it's open it takes
     // over the library view entirely (closing returns to the library).
     if (isGlobalSettingsOpen) {
       return (
-        <>
+        <Suspense fallback={<RouteFallback isDarkMode={isDarkMode} label="Opening settings…" />}>
           <GlobalSettings
             onClose={() => setIsGlobalSettingsOpen(false)}
             isDarkMode={isDarkMode}
@@ -720,21 +1079,20 @@ function AppInner() {
             exportSettings={exportSettings}
             onUpdateExportSettings={setExportSettings}
           />
-        </>
+        </Suspense>
       );
     }
     return (
       <>
         <LibraryView
-          onSelectManuscript={setCurrentManuscriptId}
+          onSelectManuscript={(id) => openManuscript(id)}
           onCreateNew={handleCreateNew}
           onImportManuscript={handleImportManuscript}
           // The Proofreader plugin contributes its own library-card action, so
           // core withdraws its built-in one rather than showing two icons that
           // open different proofreaders.
           onProofreadManuscript={proofreadActive ? (id) => {
-            setIsProofreadMode(true);
-            setCurrentManuscriptId(id);
+            openManuscript(id, true);
           } : undefined}
           onOpenSettings={() => setIsGlobalSettingsOpen(true)}
           isDarkMode={isDarkMode}
@@ -749,7 +1107,7 @@ function AppInner() {
   // state, so the existing debounced autosave persists them like any edit.
   if (isProofreadMode) {
     return (
-      <>
+      <Suspense fallback={<RouteFallback isDarkMode={isDarkMode} label="Opening proofreader…" />}>
         <ProofreadView
           metadata={metadata}
           chapters={chapters}
@@ -758,12 +1116,19 @@ function AppInner() {
           onUpdateChapter={(chapterId, content) => {
             setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, content, lastModified: Date.now() } : c));
           }}
-          onExit={() => {
-            setIsProofreadMode(false);
-            setCurrentManuscriptId(null);
-          }}
+          onExit={() => { void leaveManuscript(); }}
         />
-      </>
+        <SaveStatus
+          status={autosave.status}
+          error={autosave.error}
+          onRetry={autosave.retry}
+          canReloadServerVersion={autosave.canReloadServerVersion}
+          hasConflictRecovery={autosave.hasConflictRecovery}
+          onReloadServerVersion={reloadServerVersion}
+          onRestoreConflictDraft={restoreConflictDraft}
+          onDiscardConflictDraft={discardConflictDraft}
+        />
+      </Suspense>
     );
   }
 
@@ -773,7 +1138,7 @@ function AppInner() {
     : (chapters.find(c => c.id === currentChapterId) || chapters[0]);
 
   return (
-    <>
+    <Suspense fallback={<RouteFallback isDarkMode={isDarkMode} label="Loading editor…" />}>
       <div className={cn(
         "relative flex w-full min-h-screen-dvh selection:bg-black/10 dark:selection:bg-white/10",
         isDarkMode ? "bg-manuscript-dark" : "bg-manuscript-light"
@@ -838,7 +1203,8 @@ function AppInner() {
           userProfile={userProfile}
           onUpdateUserProfile={(newUserProfile) => setUserProfile(prev => ({ ...prev, ...newUserProfile }))}
           onDeleteManuscript={handleDeleteManuscript}
-          onReturnToLibrary={() => setCurrentManuscriptId(null)}
+          onReturnToLibrary={() => { void leaveManuscript(); }}
+          manuscriptWordCount={totalWordCount}
           exportSettings={exportSettings}
           aiOutlineMarkdown={aiOutlineMarkdown}
           isAiOutlineLoading={isAiOutlineLoading}
@@ -915,7 +1281,17 @@ function AppInner() {
           />
         )}
       </div>
-    </>
+      <SaveStatus
+        status={autosave.status}
+        error={autosave.error}
+        onRetry={autosave.retry}
+        canReloadServerVersion={autosave.canReloadServerVersion}
+        hasConflictRecovery={autosave.hasConflictRecovery}
+        onReloadServerVersion={reloadServerVersion}
+        onRestoreConflictDraft={restoreConflictDraft}
+        onDiscardConflictDraft={discardConflictDraft}
+      />
+    </Suspense>
   );
 }
 
@@ -936,4 +1312,3 @@ export default function App() {
     </PluginHost>
   );
 }
-

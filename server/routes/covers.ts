@@ -2,6 +2,7 @@ import { Router } from 'express';
 import express from 'express';
 import crypto from 'crypto';
 import { storage } from '../lib/storage/HybridManager';
+import { asyncRoute } from '../lib/asyncRoute';
 
 const router = Router();
 
@@ -54,7 +55,7 @@ function sniffImage(buf: Buffer): Sniffed | null {
 router.post(
   '/:manuscriptId',
   express.raw({ type: ['image/png', 'image/jpeg', 'image/webp', 'application/octet-stream'], limit: MAX_BYTES }),
-  async (req, res) => {
+  asyncRoute(async (req, res) => {
     if (!req.userId) {
       res.status(401).json({ error: 'Not authenticated' });
       return;
@@ -100,7 +101,7 @@ router.post(
     // The client stores this in metadata.coverArt. We DON'T include userId
     // in the public URL — the serve handler scopes by the authenticated user.
     res.json({ coverArt: filename, mime: sniffed.mime, bytes: buf.length });
-  },
+  }),
 );
 
 /**
@@ -108,7 +109,7 @@ router.post(
  * id and a random suffix). We scope to the authenticated user's directory so
  * one user can't request another user's covers by guessing filenames.
  */
-router.get('/:filename', async (req, res) => {
+router.get('/:filename', asyncRoute(async (req, res) => {
   if (!req.userId) {
     res.status(401).json({ error: 'Not authenticated' });
     return;
@@ -137,9 +138,9 @@ router.get('/:filename', async (req, res) => {
   res.setHeader('Content-Type', mime);
   res.setHeader('Cache-Control', 'private, max-age=300');
   res.send(buf);
-});
+}));
 
-router.delete('/:manuscriptId', async (req, res) => {
+router.delete('/:manuscriptId', asyncRoute(async (req, res) => {
   if (!req.userId) {
     res.status(401).json({ error: 'Not authenticated' });
     return;
@@ -160,6 +161,6 @@ router.delete('/:manuscriptId', async (req, res) => {
     }
   } catch { /* nothing to delete */ }
   res.json({ ok: true });
-});
+}));
 
 export default router;

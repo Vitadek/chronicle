@@ -27,7 +27,7 @@ import { authFetch } from '../services/authService';
  *  - chronicle_ai_ui_hidden — cache of the server's own AI_UI flag
  *  - chronicle_chars_/plotnodes_/plotedges_/ai_outline_* — per-manuscript data,
  *    persisted through the manuscript store
- *  - chronicle_sync_since / chronicle_migrated_v* — machine-local cursors
+ *  - chronicle_sync_* / chronicle_migrated_v* — machine-local cursors
  */
 export const SYNCED_SETTINGS_KEYS = [
   'chronicle_theme',

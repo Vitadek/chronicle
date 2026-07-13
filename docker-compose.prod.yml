@@ -1,5 +1,6 @@
 # Production stack: Chronicle behind Caddy (automatic HTTPS via Let's Encrypt)
-# with Authelia forward-auth and Nextcloud hybrid storage. Full walkthrough in
+# with Authelia forward-auth and an async Nextcloud recovery replica. SQLite
+# remains authoritative. Full walkthrough in
 # DEPLOY.md.
 #
 #   cp .env.prod.example .env   # then fill in secrets
@@ -45,7 +46,7 @@ services:
       start_period: 30s
 
   chronicle:
-    image: ghcr.io/vitadek/chronicle:latest
+    image: forgejo.lan/protoman/chronicle:latest
     container_name: chronicle
     restart: unless-stopped
     expose:
@@ -62,12 +63,28 @@ services:
       AUTH_FORWARD_TRUSTED_PROXIES: "127.0.0.1,::1,172.16.0.0/12,10.0.0.0/8,192.168.0.0/16"
       # --- Self-hosted grammar engine (internal) ---
       LANGUAGETOOL_URL: http://languagetool:8010
-      # --- Nextcloud hybrid storage: local speed + Nextcloud redundancy ---
-      STORAGE_PROVIDER: hybrid
-      NEXTCLOUD_URL: ${NEXTCLOUD_URL}
-      NC_USER: ${NC_USER}
-      NC_PASS: ${NC_PASS}
+      # --- Exactly one async replica; SQLite remains the live authority ---
+      STORAGE_REPLICA: ${STORAGE_REPLICA:-nextcloud}
+      STORAGE_RETRY_INTERVAL_MS: ${STORAGE_RETRY_INTERVAL_MS:-30000}
+      STORAGE_MAX_ATTEMPTS: ${STORAGE_MAX_ATTEMPTS:-10}
+      NEXTCLOUD_URL: ${NEXTCLOUD_URL:-}
+      NEXTCLOUD_ALLOW_INSECURE_HTTP: ${NEXTCLOUD_ALLOW_INSECURE_HTTP:-false}
+      NC_USER: ${NC_USER:-}
+      NC_PASS: ${NC_PASS:-}
       NC_DIR: ${NC_DIR:-Chronicle_Storage}
+      # To select generic S3 instead, set STORAGE_REPLICA=s3 in .env. Empty
+      # values are ignored while the default Nextcloud replica is selected.
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_PREFIX: ${S3_PREFIX:-chronicle}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+      S3_ALLOW_INSECURE_HTTP: ${S3_ALLOW_INSECURE_HTTP:-false}
+      S3_SERVER_SIDE_ENCRYPTION: ${S3_SERVER_SIDE_ENCRYPTION:-}
+      S3_KMS_KEY_ID: ${S3_KMS_KEY_ID:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       # --- AI proxy (server-side, optional). Keys come from .env, never the browser. ---
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}

@@ -14,6 +14,7 @@ import path from 'path';
  *                 Authelia (via its OIDC provider), Auth0, Google, etc.
  */
 type AuthMode = 'none' | 'token' | 'forward' | 'oidc';
+export type StorageReplica = 'none' | 'nextcloud' | 's3';
 
 const rawMode = (process.env.AUTH_MODE || 'none').toLowerCase();
 const authMode: AuthMode = (
@@ -22,6 +23,27 @@ const authMode: AuthMode = (
     : 'none'
 ) as AuthMode;
 
+const legacyStorageProvider = (process.env.STORAGE_PROVIDER || '').trim().toLowerCase();
+const configuredStorageReplica = (process.env.STORAGE_REPLICA || '').trim().toLowerCase();
+const rawStorageReplica = configuredStorageReplica || (
+  !legacyStorageProvider || legacyStorageProvider === 'sqlite'
+    ? 'none'
+    : legacyStorageProvider === 'hybrid'
+      ? 'nextcloud'
+      : legacyStorageProvider
+);
+
+function envBoolean(name: string, fallback = false): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  return raw.toLowerCase() === 'true';
+}
+
+function envPositiveInt(name: string, fallback: number): number {
+  const parsed = Number.parseInt(process.env[name] || '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
   host: process.env.HOST || '0.0.0.0',
@@ -29,10 +51,10 @@ export const config = {
   isProd: process.env.NODE_ENV === 'production',
 
   sessionTtlMs: 1000 * 60 * 60 * 24 * 30,
-  tombstoneRetentionMs: 1000 * 60 * 60 * 24 * 30,
 
   auth: {
     mode: authMode,
+    allowInsecureNoAuth: envBoolean('ALLOW_INSECURE_NO_AUTH'),
 
     // --- token mode ---
     token: process.env.AUTH_TOKEN || '',
@@ -72,14 +94,17 @@ export const config = {
   },
 
   nextcloud: {
-    /** Standalone Nextcloud OAuth flow, kept for WebDAV mirror token capture. */
+    /** Standalone Nextcloud OAuth identity flow. */
     enabled: !!process.env.NEXTCLOUD_URL,
     url: (process.env.NEXTCLOUD_URL || '').replace(/\/$/, ''),
+    allowInsecureHttp: envBoolean('NEXTCLOUD_ALLOW_INSECURE_HTTP'),
     clientId: process.env.NEXTCLOUD_CLIENT_ID || '',
     clientSecret: process.env.NEXTCLOUD_CLIENT_SECRET || '',
     redirectUri: process.env.NEXTCLOUD_REDIRECT_URI || '',
-    mirrorEnabled: process.env.NEXTCLOUD_MIRROR === 'true',
-    mirrorRoot: process.env.NEXTCLOUD_MIRROR_ROOT || 'Chronicle',
+    /** @deprecated The second write path was replaced by STORAGE_REPLICA. */
+    mirrorEnabled: envBoolean('NEXTCLOUD_MIRROR'),
+    /** @deprecated The legacy OAuth mirror root is no longer used. */
+    legacyMirrorRoot: (process.env.NEXTCLOUD_MIRROR_ROOT || '').trim(),
 
     /** Backend App Password auth (S3-style connector) */
     user: process.env.NC_USER || '',
@@ -87,7 +112,27 @@ export const config = {
     storageDir: process.env.NC_DIR || 'Chronicle_Storage',
   },
 
-  storageProvider: (process.env.STORAGE_PROVIDER || 'sqlite').toLowerCase() as 'sqlite' | 'hybrid',
+  storage: {
+    replica: rawStorageReplica as StorageReplica,
+    /** Set when the deprecated STORAGE_PROVIDER compatibility mapping is in use. */
+    legacyProvider: configuredStorageReplica ? '' : legacyStorageProvider,
+    retryIntervalMs: envPositiveInt('STORAGE_RETRY_INTERVAL_MS', 30_000),
+    maxAttempts: envPositiveInt('STORAGE_MAX_ATTEMPTS', 10),
+  },
+
+  s3: {
+    bucket: process.env.S3_BUCKET || '',
+    region: process.env.S3_REGION || 'us-east-1',
+    endpoint: (process.env.S3_ENDPOINT || '').replace(/\/+$/, ''),
+    prefix: (process.env.S3_PREFIX || 'chronicle').replace(/^\/+|\/+$/g, ''),
+    forcePathStyle: envBoolean('S3_FORCE_PATH_STYLE'),
+    allowInsecureHttp: envBoolean('S3_ALLOW_INSECURE_HTTP'),
+    serverSideEncryption: process.env.S3_SERVER_SIDE_ENCRYPTION || '',
+    kmsKeyId: process.env.S3_KMS_KEY_ID || '',
+  },
+
+  /** @deprecated Use config.storage.replica. Kept for existing route compatibility. */
+  storageProvider: (rawStorageReplica === 'none' ? 'sqlite' : 'hybrid') as 'sqlite' | 'hybrid',
 
   /**
    * AI keys. Held server-side so the browser never sees them. The client
@@ -124,9 +169,27 @@ export const config = {
 
 export type AppConfig = typeof config;
 
-/** Validate config at boot; throws with a helpful message on misconfiguration. */
-export function validateConfig(): void {
+/** Validate config at boot; non-listening CLI commands may skip bind-only checks. */
+export function validateConfig(options: { listening?: boolean } = {}): void {
   const a = config.auth;
+  if (!['none', 'token', 'forward', 'oidc'].includes(rawMode)) {
+    throw new Error(
+      `Invalid AUTH_MODE="${rawMode}". Expected none, token, forward, or oidc.`,
+    );
+  }
+  const loopbackHosts = new Set(['127.0.0.1', '::1', '[::1]', 'localhost']);
+  if (
+    config.isProd &&
+    options.listening !== false &&
+    a.mode === 'none' &&
+    !loopbackHosts.has(config.host.toLowerCase()) &&
+    !a.allowInsecureNoAuth
+  ) {
+    throw new Error(
+      'Production AUTH_MODE=none may only bind to loopback. ' +
+      'For an explicitly trusted network, set ALLOW_INSECURE_NO_AUTH=true.',
+    );
+  }
   if (a.mode === 'token' && !a.token) {
     throw new Error('AUTH_MODE=token requires AUTH_TOKEN to be set.');
   }
@@ -147,12 +210,85 @@ export function validateConfig(): void {
     }
   }
 
-  if (config.storageProvider === 'hybrid') {
+  if (!['none', 'nextcloud', 's3'].includes(config.storage.replica)) {
+    throw new Error(
+      `Invalid STORAGE_REPLICA="${config.storage.replica}". Expected none, nextcloud, or s3.`,
+    );
+  }
+
+  if (config.nextcloud.mirrorEnabled || config.nextcloud.legacyMirrorRoot) {
+    throw new Error(
+      'NEXTCLOUD_MIRROR and NEXTCLOUD_MIRROR_ROOT are retired because Chronicle ' +
+      'supports exactly one durable remote. Remove both legacy settings and ' +
+      'use STORAGE_REPLICA=nextcloud with NC_USER and NC_PASS instead.',
+    );
+  }
+
+  if (config.nextcloud.url) {
+    let endpoint: URL;
+    try {
+      endpoint = new URL(config.nextcloud.url);
+    } catch {
+      throw new Error('NEXTCLOUD_URL must be a valid absolute URL.');
+    }
+    if (endpoint.protocol !== 'https:' && endpoint.protocol !== 'http:') {
+      throw new Error('NEXTCLOUD_URL must use http or https.');
+    }
+    if (endpoint.protocol !== 'https:' && !config.nextcloud.allowInsecureHttp) {
+      throw new Error(
+        'NEXTCLOUD_URL must use HTTPS. For a trusted LAN only, explicitly set ' +
+        'NEXTCLOUD_ALLOW_INSECURE_HTTP=true.',
+      );
+    }
+  }
+
+  if (config.storage.legacyProvider) {
+    if (!['sqlite', 'hybrid'].includes(config.storage.legacyProvider)) {
+      throw new Error(
+        `Invalid STORAGE_PROVIDER="${config.storage.legacyProvider}". ` +
+        'Use STORAGE_REPLICA=none|nextcloud|s3.',
+      );
+    }
+    console.warn(
+      `[config] STORAGE_PROVIDER=${config.storage.legacyProvider} is deprecated; ` +
+      `use STORAGE_REPLICA=${config.storage.replica}.`,
+    );
+  }
+
+  if (config.storage.replica === 'nextcloud') {
     const n = config.nextcloud;
     if (!n.url || !n.user || !n.pass) {
       throw new Error(
-        'STORAGE_PROVIDER=hybrid requires NEXTCLOUD_URL, NC_USER, and NC_PASS (App Password) to be set.',
+        'STORAGE_REPLICA=nextcloud requires NEXTCLOUD_URL, NC_USER, and NC_PASS (App Password).',
       );
+    }
+  }
+
+  if (config.storage.replica === 's3') {
+    if (!config.s3.bucket) {
+      throw new Error('STORAGE_REPLICA=s3 requires S3_BUCKET.');
+    }
+    if (config.s3.endpoint) {
+      let endpoint: URL;
+      try {
+        endpoint = new URL(config.s3.endpoint);
+      } catch {
+        throw new Error('S3_ENDPOINT must be a valid absolute URL.');
+      }
+      if (endpoint.protocol !== 'https:' && !config.s3.allowInsecureHttp) {
+        throw new Error(
+          'S3_ENDPOINT must use HTTPS. For a trusted LAN only, explicitly set S3_ALLOW_INSECURE_HTTP=true.',
+        );
+      }
+      if (endpoint.protocol !== 'https:' && endpoint.protocol !== 'http:') {
+        throw new Error('S3_ENDPOINT must use http or https.');
+      }
+    }
+    if (!['', 'AES256', 'aws:kms'].includes(config.s3.serverSideEncryption)) {
+      throw new Error('S3_SERVER_SIDE_ENCRYPTION must be empty, AES256, or aws:kms.');
+    }
+    if (config.s3.serverSideEncryption === 'aws:kms' && !config.s3.kmsKeyId) {
+      throw new Error('S3_SERVER_SIDE_ENCRYPTION=aws:kms requires S3_KMS_KEY_ID.');
     }
   }
 }

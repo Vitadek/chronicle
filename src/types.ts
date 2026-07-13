@@ -20,6 +20,8 @@ export interface Chapter {
   title: string;
   content: string;
   lastModified: number;
+  /** Server-assigned concurrency token. Omitted by pre-revision servers. */
+  revision?: number;
 }
 
 export interface ManuscriptMetadata {
@@ -27,6 +29,8 @@ export interface ManuscriptMetadata {
   title: string;
   author: string;
   lastModified: number;
+  /** Server-assigned concurrency token. Omitted by pre-revision servers. */
+  revision?: number;
   sceneBreakStyle?: 'classic' | 'dots' | 'ornamental' | 'custom';
   customSceneBreakSvg?: string;
   contactName?: string;

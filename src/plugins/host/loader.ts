@@ -8,7 +8,11 @@ import * as TiptapState from '@tiptap/pm/state';
 import * as TiptapViewNs from '@tiptap/pm/view';
 import * as TiptapModel from '@tiptap/pm/model';
 import * as Motion from 'motion/react';
-import * as Lucide from 'lucide-react';
+// Keep the plugin host's deliberately-complete icon namespace out of the
+// library entry graph. The query gives Rollup a distinct optional module;
+// core UI imports from `lucide-react` remain normally tree-shaken.
+// @ts-ignore -- Vite resolves query-suffixed ESM modules at build time.
+import * as Lucide from 'lucide-react/dist/esm/lucide-react.js?plugin-host';
 import * as PluginApi from '../api';
 import { PLUGIN_API_VERSION, type ChroniclePlugin } from '../api';
 import { authFetch } from '../../services/authService';

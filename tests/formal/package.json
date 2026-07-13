@@ -1,0 +1,19 @@
+{
+  "name": "chronicle-formal-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "test": "node specs/run.mjs",
+    "fixture:languagetool": "node fixtures/languagetool-server.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1085.0",
+    "@hocuspocus/provider": "2.15.3",
+    "ws": "8.21.0",
+    "yjs": "13.6.27"
+  }
+}

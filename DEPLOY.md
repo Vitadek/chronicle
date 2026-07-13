@@ -2,7 +2,8 @@
 
 A real, hardened setup: **Chronicle behind [Caddy](https://caddyserver.com)
 (automatic HTTPS) with [Authelia](https://www.authelia.com) forward-auth and
-[Nextcloud](https://nextcloud.com) hybrid storage.** This is the same shape as a
+[Nextcloud](https://nextcloud.com) asynchronous recovery replica.** SQLite
+remains Chronicle's authoritative store. This is the same shape as a
 working single-VPS install; adjust names to taste.
 
 ```
@@ -13,9 +14,9 @@ working single-VPS install; adjust names to taste.
               │ (TLS/LE) │◀── Remote-User / Remote-Email ──│  (IdP)    │
               └────┬─────┘                                 └───────────┘
                    │ reverse_proxy chronicle:3000
-              ┌────▼──────┐   background mirror   ┌─────────────────────┐
+              ┌────▼──────┐   durable async copy  ┌─────────────────────┐
               │ Chronicle │ ─────────────────────▶│ Nextcloud (WebDAV)  │
-              │  :3000    │      LanguageTool      └─────────────────────┘
+              │ SQLite    │      LanguageTool      └─────────────────────┘
               └───────────┘  (internal grammar)
 ```
 
@@ -105,14 +106,57 @@ docker run --rm authelia/authelia:4.38 \
 Paste the resulting `$argon2id$...` string into the user's `password:` field and
 set `displayname` / `email`.
 
-## 6. Nextcloud hybrid storage
+## 6. Choose one asynchronous replica
 
-`docker-compose.prod.yml` sets `STORAGE_PROVIDER=hybrid`, so Chronicle keeps the
-fast local SQLite copy **and** mirrors manuscripts (plus large blobs like covers)
-to Nextcloud under `NC_DIR`. Nothing to install on the Nextcloud side beyond the
-app password from step 3 — first write creates `Chronicle_Storage/`.
+`docker-compose.prod.yml` sets `STORAGE_REPLICA=nextcloud`. Chronicle commits
+every change to local SQLite first, then processes a durable background outbox
+to copy portable records and covers beneath `NC_DIR`. Nothing to install on the
+Nextcloud side beyond the app password from step 3 — the first write creates
+`Chronicle_Storage/`.
 
-Prefer everything local? Set `STORAGE_PROVIDER=sqlite` and drop the `NC_*` vars.
+Normal reads always use SQLite. If Nextcloud is unavailable, editing continues
+and `/readyz` reports the replica as degraded until queued work succeeds. The
+remote layout is versioned beneath `v1/users/<user-id>/`: JSON manuscript
+metadata, human-readable chapter HTML, profile/settings JSON, and covers.
+
+Deleting a manuscript or chapter replaces its live portable payload at the
+same key with a revisioned tombstone; chapter tombstones contain no prose.
+Restore applies these tombstones so older remote content cannot resurrect
+deleted work. Opaque blobs such as covers are deleted physically.
+
+Prefer everything local? Set `STORAGE_REPLICA=none` and drop the `NC_*` vars.
+
+### S3 instead of Nextcloud
+
+Chronicle also supports AWS S3, MinIO, Cloudflare R2, Backblaze B2, and other
+Signature V4-compatible services. Set `STORAGE_REPLICA=s3` in `.env` and use an
+existing bucket. The supplied Compose file already passes these variables:
+
+```yaml
+environment:
+  STORAGE_REPLICA: s3
+  S3_BUCKET: ${S3_BUCKET}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_ENDPOINT: ${S3_ENDPOINT:-}       # omit/empty for AWS
+  S3_PREFIX: ${S3_PREFIX:-chronicle}
+  S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+  S3_ALLOW_INSECURE_HTTP: ${S3_ALLOW_INSECURE_HTTP:-false}
+  S3_SERVER_SIDE_ENCRYPTION: ${S3_SERVER_SIDE_ENCRYPTION:-}
+  S3_KMS_KEY_ID: ${S3_KMS_KEY_ID:-}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+  AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+```
+
+The AWS SDK standard credential chain is used, so mounted profiles, web
+identity, and ECS/EC2 roles can replace static keys. Custom endpoints must be
+HTTPS unless `S3_ALLOW_INSECURE_HTTP=true` is deliberately set on a trusted
+LAN. Optional server-side encryption is configured with
+`S3_SERVER_SIDE_ENCRYPTION=AES256|aws:kms` and `S3_KMS_KEY_ID` for KMS.
+
+`STORAGE_REPLICA` accepts exactly `none`, `nextcloud`, or `s3`; configure only
+one remote. The deprecated `STORAGE_PROVIDER=sqlite|hybrid` compatibility
+mapping exists for upgrades, but should not be used in new deployments.
 
 ## 7. Launch
 
@@ -125,6 +169,13 @@ Open `https://chronicle.example.com` — you'll be bounced to Authelia to log in
 then land in your Library. On boot Chronicle probes any configured AI keys and
 logs OK/INVALID for each.
 
+Check readiness and replica state from the host network:
+
+```bash
+docker compose -f docker-compose.prod.yml exec chronicle \
+  wget -qO- http://127.0.0.1:3000/readyz
+```
+
 ## 8. Updates & backups
 
 ```bash
@@ -132,18 +183,63 @@ logs OK/INVALID for each.
 docker compose -f docker-compose.prod.yml pull && \
 docker compose -f docker-compose.prod.yml up -d
 
-# hot backup of the SQLite DB (WAL-safe)
+# hot backup of the SQLite DB (WAL-safe; prints the created path)
 docker compose -f docker-compose.prod.yml exec chronicle \
-  sqlite3 /data/chronicle.db ".backup /data/chronicle.db.bak"
+  npm run storage -- backup
+
+# inspect and verify the configured async replica
+docker compose -f docker-compose.prod.yml exec chronicle \
+  npm run storage -- status
+docker compose -f docker-compose.prod.yml exec chronicle \
+  npm run storage -- verify
 ```
 
-With hybrid storage your manuscripts are also continuously mirrored to Nextcloud,
-so the SQLite DB isn't your only copy.
+Use `npm run storage -- retry` to requeue failed jobs and
+`npm run storage -- seed` to requeue the complete desired-state manifest.
+`verify` exits 2 for missing, unexpected, mismatched, or unverifiable objects;
+S3 exposes full Chronicle metadata, while some WebDAV servers cannot make every
+object fully verifiable.
+
+`npm run storage -- restore` requires the configured remote and performs a dry
+run. Repeat with `--apply` only after reviewing it; existing records require an
+additional `--force`. Apply creates a hot SQLite backup first and merges remote
+records rather than replacing every local row. Restore is never automatic and
+never participates in normal reads; test both SQLite backups and remote
+recovery before relying on them. Restore stamps applied records with an
+effective restore time, ensuring legacy sync clients whose cursors postdate the
+portable backup still receive the recovered manuscript, chapter, and profile
+state.
+
+Apply only while Chronicle is stopped. Keep the replica dependency available
+and use a one-off container against the same named `/data` volume:
+
+```bash
+docker compose -f docker-compose.prod.yml stop chronicle
+docker compose -f docker-compose.prod.yml run --rm --no-deps chronicle \
+  node dist/cli.cjs restore
+docker compose -f docker-compose.prod.yml run --rm --no-deps chronicle \
+  node dist/cli.cjs restore --apply --force
+docker compose -f docker-compose.prod.yml up -d chronicle
+```
+
+Do not substitute `exec` for the apply command; that would run alongside the
+server's live SQLite connection. Preserve the reported automatic
+`/data/chronicle-before-restore-*.db` backup and run `verify` after restart.
+
+### Container release channels
+
+`:edge` follows tested pushes to `main`; `:latest` is the newest stable release.
+A signed, annotated source tag `vX.Y.Z` publishes container tags `X.Y.Z`, `X.Y`,
+and `latest` without the source tag's leading `v`. Forgejo is the canonical
+registry; the GitHub mirror performs validation only.
 
 ## Notes
 
-- **Pin image tags** for reproducibility (e.g. a release tag instead of
-  `:latest`) once you settle on a version.
+- **Pin an OCI digest** (`image@sha256:...`) for reproducible deployment.
+  Semver and `latest` tags remain mutable registry references.
+- A production deployment using `AUTH_MODE=none` on a non-loopback bind fails
+  closed unless `ALLOW_INSECURE_NO_AUTH=true` is explicit. This stack uses
+  `AUTH_MODE=forward`, so that exception is neither needed nor recommended.
 - Authelia's `access_control` default is `deny`; the shipped rule allows the two
   Chronicle hostnames with `one_factor`. Add 2FA by raising it to `two_factor`.
 - See [BACKEND.md](./BACKEND.md) for the auth-mode matrix, sync protocol, and

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { storage } from '../lib/storage/HybridManager';
+import { asyncRoute } from '../lib/asyncRoute';
 
 const router = Router();
 
@@ -21,7 +22,7 @@ const router = Router();
 // Preferences are small; anything past this is a bug or abuse.
 const MAX_BYTES = 128 * 1024;
 
-router.get('/', async (req, res) => {
+router.get('/', asyncRoute(async (req, res) => {
   if (!req.userId) {
     res.status(401).json({ error: 'Not authenticated' });
     return;
@@ -37,9 +38,9 @@ router.get('/', async (req, res) => {
     // Corrupt blob: treat as absent rather than wedging the client forever.
     res.json({ settings: null });
   }
-});
+}));
 
-router.put('/', async (req, res) => {
+router.put('/', asyncRoute(async (req, res) => {
   if (!req.userId) {
     res.status(401).json({ error: 'Not authenticated' });
     return;
@@ -57,15 +58,13 @@ router.put('/', async (req, res) => {
     }
   }
   const json = JSON.stringify(settings);
-  if (json.length > MAX_BYTES) {
+  if (Buffer.byteLength(json, 'utf8') > MAX_BYTES) {
     res.status(413).json({ error: 'Settings too large' });
     return;
   }
-  // Store as a Buffer, not a string: SQLiteProvider.get() guesses base64 for
-  // space-free strings, which would garble compact JSON on read. Buffers
-  // round-trip through its base64 encoding deterministically.
+  // Store explicit UTF-8 bytes in the authoritative SQLite BLOB table.
   await storage.put(`settings/${req.userId}`, Buffer.from(json, 'utf8'), 'application/json');
   res.json({ ok: true });
-});
+}));
 
 export default router;

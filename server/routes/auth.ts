@@ -127,12 +127,11 @@ router.get('/oidc/callback', async (req: Request, res: Response) => {
 });
 
 // ----------------------------------------------------------------------------
-// Nextcloud OAuth (legacy + WebDAV mirror token capture)
+// Nextcloud OAuth identity (optional)
 //
-// Kept because the WebDAV mirror feature needs an access token with WebDAV
-// scope, which generic OIDC against Nextcloud's OIDC app doesn't provide.
-// In oidc mode this is a secondary "connect Nextcloud" flow; in none/token
-// modes it can serve as the primary login.
+// In oidc mode this can link a Nextcloud identity; in none/token modes it can
+// serve as the primary login. Storage replication uses one server-side target
+// selected by STORAGE_REPLICA and is deliberately independent of this flow.
 // ----------------------------------------------------------------------------
 
 router.get('/nextcloud/start', (_req, res) => {

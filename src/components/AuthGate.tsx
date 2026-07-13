@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { authService, type AuthConfig } from '../services/authService';
+import { authService, type AuthConfig, type AuthUser } from '../services/authService';
 
 /**
  * Gates the app on authentication. The data services already attach the stored
@@ -23,6 +23,9 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     let onAuthRequired: (() => void) | null = null;
+    // Never carry a previously verified collaboration scope into a new auth
+    // bootstrap attempt (including an account switch in the same tab).
+    authService.clearUserId();
 
     (async () => {
       let config: AuthConfig;
@@ -56,9 +59,21 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         return; // redirecting away; don't render the app
       }
 
-      // We have (or don't need) a token — reset the loop guard so a future
-      // session expiry can restart login.
-      sessionStorage.removeItem('chronicle_oidc_redirect_at');
+      let user: AuthUser | null = null;
+      try {
+        user = await authService.me();
+      } catch {
+        // Preserve the existing offline behavior: the app can still render
+        // local recovery/status UI, but collaboration stays disabled without
+        // a server-verified user scope.
+      }
+      if (cancelled) return;
+      if (user) {
+        authService.setUserId(user.id);
+        // Reset the loop guard only after the callback token has actually
+        // produced a verified server identity.
+        sessionStorage.removeItem('chronicle_oidc_redirect_at');
+      }
       if (!cancelled) setReady(true);
     })();
 

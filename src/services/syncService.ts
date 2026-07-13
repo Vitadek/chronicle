@@ -1,8 +1,8 @@
-import { authFetch } from './authService';
+import { authFetch, authService } from './authService';
 import { PluginStateRecord } from '../types';
 
 /**
- * Background sync against the server's /api/sync endpoint.
+ * Background pull against the server's monotonic /api/sync/v2 endpoint.
  *
  * Design intent:
  *   - The legacy CRUD API (manuscriptService) is the *write path* for the
@@ -16,7 +16,28 @@ import { PluginStateRecord } from '../types';
  * CRUD endpoint show up here on the next pull, and vice versa.
  */
 
-const SINCE_KEY = 'chronicle_sync_since';
+const CURSOR_KEY = 'chronicle_sync_cursor_v2';
+const EPOCH_KEY = 'chronicle_sync_epoch_v2';
+
+function accountStorageKey(base: string): string {
+  return `${base}:${authService.userId ?? 'unverified'}`;
+}
+
+function cursorKey(): string {
+  // Change-log sequence numbers are global while pulls are user-filtered. A
+  // cursor must therefore follow the verified account, or switching accounts
+  // in one browser could skip the second account's older records.
+  return accountStorageKey(CURSOR_KEY);
+}
+
+function epochKey(): string {
+  return accountStorageKey(EPOCH_KEY);
+}
+
+function validEpoch(value: unknown): value is string {
+  return typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
 
 type SyncManuscript = {
   id: string;
@@ -36,7 +57,10 @@ type SyncChapter = {
 type SyncProfile = { data: string; last_modified: number } | null;
 
 export interface SyncResponse {
-  serverTime: number;
+  epoch: string;
+  cursor: number;
+  hasMore: boolean;
+  reset: boolean;
   pull: {
     manuscripts: SyncManuscript[];
     chapters: SyncChapter[];
@@ -47,7 +71,7 @@ export interface SyncResponse {
 
 /**
  * Pull-only sync: doesn't push, just asks the server for anything newer than
- * our last `since` cursor. Returns the raw response so callers can decide
+ * our last server sequence. Returns a compatibility-shaped pull so callers can decide
  * what to do (e.g. refresh the open manuscript, repaint the library).
  *
  * Push is handled implicitly by the existing PUT /api/manuscripts path. If
@@ -55,13 +79,25 @@ export interface SyncResponse {
  * changes in localStorage and send them as `push` in the body.
  */
 export async function syncOnce(): Promise<SyncResponse | null> {
-  const since = parseInt(localStorage.getItem(SINCE_KEY) || '0', 10);
+  const key = cursorKey();
+  const historyKey = epochKey();
+  const stored = Number.parseInt(localStorage.getItem(key) || '0', 10);
+  const cursor = Number.isSafeInteger(stored) && stored >= 0 ? stored : 0;
+  const storedEpoch = localStorage.getItem(historyKey);
+  const epoch = validEpoch(storedEpoch) ? storedEpoch : undefined;
+  // A cursor learned before epoch-aware sync cannot be assigned safely to the
+  // current history. Adopt the first epoch through a bounded replay from zero.
+  const requestCursor = epoch ? cursor : 0;
   let res: Response;
   try {
-    res = await authFetch('/api/sync', {
+    res = await authFetch('/api/sync/v2', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ since, push: { manuscripts: [], chapters: [], plugins: [] } }),
+      body: JSON.stringify({
+        cursor: requestCursor,
+        ...(epoch ? { epoch } : {}),
+        changes: [],
+      }),
     });
   } catch {
     // Network error — silently retry on next tick.
@@ -74,9 +110,78 @@ export async function syncOnce(): Promise<SyncResponse | null> {
     }
     return null;
   }
-  const body = (await res.json()) as SyncResponse;
-  localStorage.setItem(SINCE_KEY, String(body.serverTime));
-  return body;
+  const body = (await res.json()) as {
+    epoch?: unknown;
+    cursor?: unknown;
+    hasMore?: unknown;
+    reset?: unknown;
+    changes?: Array<{
+      entity?: unknown;
+      id?: unknown;
+      manuscriptId?: unknown;
+      operation?: unknown;
+      data?: unknown;
+      title?: unknown;
+      content?: unknown;
+      position?: unknown;
+      updatedAt?: unknown;
+    }>;
+  };
+  if (
+    !validEpoch(body.epoch) ||
+    !Number.isSafeInteger(body.cursor) ||
+    (body.cursor as number) < 0 ||
+    !Array.isArray(body.changes)
+  ) {
+    return null;
+  }
+
+  const manuscripts: SyncManuscript[] = [];
+  const chapters: SyncChapter[] = [];
+  let profile: SyncProfile = null;
+  for (const change of body.changes) {
+    const updatedAt = typeof change.updatedAt === 'number' ? change.updatedAt : Date.now();
+    const deleted = change.operation === 'delete';
+    if (change.entity === 'manuscript' && typeof change.id === 'string') {
+      manuscripts.push({
+        id: change.id,
+        data: typeof change.data === 'string' ? change.data : '{}',
+        last_modified: updatedAt,
+        deleted,
+      });
+    } else if (
+      change.entity === 'chapter' &&
+      typeof change.id === 'string' &&
+      typeof change.manuscriptId === 'string'
+    ) {
+      chapters.push({
+        id: change.id,
+        manuscript_id: change.manuscriptId,
+        title: typeof change.title === 'string' ? change.title : null,
+        content: typeof change.content === 'string' ? change.content : null,
+        position: typeof change.position === 'number' ? change.position : null,
+        last_modified: updatedAt,
+        deleted,
+      });
+    } else if (change.entity === 'profile' && typeof change.data === 'string') {
+      profile = { data: change.data, last_modified: updatedAt };
+    }
+  }
+
+  // Cursors are scoped to a durable history epoch. Treat an epoch change as a
+  // reset defensively even if an older intermediary omitted the reset flag,
+  // accept the replay cursor, and persist the new pair for this verified user.
+  const reset = body.reset === true || epoch === undefined || body.epoch !== epoch;
+  const nextCursor = reset ? (body.cursor as number) : Math.max(cursor, body.cursor as number);
+  localStorage.setItem(key, String(nextCursor));
+  localStorage.setItem(historyKey, body.epoch);
+  return {
+    epoch: body.epoch,
+    cursor: nextCursor,
+    hasMore: body.hasMore === true,
+    reset,
+    pull: { manuscripts, chapters, profile, plugins: [] },
+  };
 }
 
 export interface SyncControllerOptions {
@@ -99,18 +204,36 @@ export function startSync({
 }: SyncControllerOptions = {}): () => void {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let inFlight = false;
+  let rerunRequested = false;
 
   const tick = async () => {
     if (stopped) return;
-    const resp = await syncOnce();
-    if (resp && onPull) {
-      try {
-        onPull(resp);
-      } catch (e) {
-        console.warn('sync onPull handler threw:', e);
+    if (inFlight) {
+      rerunRequested = true;
+      return;
+    }
+    inFlight = true;
+    try {
+      do {
+        rerunRequested = false;
+        const resp = await syncOnce();
+        if (resp && onPull) {
+          try {
+            onPull(resp);
+          } catch (e) {
+            console.warn('sync onPull handler threw:', e);
+          }
+        }
+        if (resp?.hasMore) rerunRequested = true;
+      } while (!stopped && rerunRequested);
+    } finally {
+      inFlight = false;
+      if (!stopped) {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(tick, intervalMs);
       }
     }
-    if (!stopped) timer = setTimeout(tick, intervalMs);
   };
 
   const onVisible = () => {
@@ -130,7 +253,8 @@ export function startSync({
   };
 }
 
-/** Reset the sync cursor — useful after logout or when switching accounts. */
+/** Reset sync history state — useful after logout or when switching accounts. */
 export function resetSyncCursor(): void {
-  localStorage.removeItem(SINCE_KEY);
+  localStorage.removeItem(cursorKey());
+  localStorage.removeItem(epochKey());
 }

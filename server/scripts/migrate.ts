@@ -1,7 +1,8 @@
 import path from 'path';
 import fs from 'fs';
-import { db, LOCAL_USER_ID } from '../db';
+import { LOCAL_USER_ID } from '../db';
 import { config } from '../config';
+import { saveLegacyManuscript, type ManuscriptRecord } from '../lib/manuscriptRepository';
 
 /**
  * Imports any pre-existing data/manuscripts/*.json files into SQLite under
@@ -30,45 +31,44 @@ export function importLegacyManuscripts(): void {
       if (!m?.metadata?.id) continue;
 
       const mId = m.metadata.id as string;
-      const mLast = (m.metadata.lastModified as number) || Date.now();
-      const metaToStore = { ...m.metadata };
-
-      const tx = db.transaction(() => {
-        db.prepare(
-          `INSERT INTO manuscripts (user_id, id, data, last_modified, deleted_at)
-           VALUES (?, ?, ?, ?, NULL)
-           ON CONFLICT(user_id, id) DO UPDATE SET
-             data = CASE WHEN excluded.last_modified > manuscripts.last_modified
-                         THEN excluded.data ELSE manuscripts.data END,
-             last_modified = MAX(manuscripts.last_modified, excluded.last_modified)`,
-        ).run(LOCAL_USER_ID, mId, JSON.stringify(metaToStore), mLast);
-
-        const upCh = db.prepare(
-          `INSERT INTO chapters
-             (user_id, manuscript_id, id, title, content, position, last_modified, deleted_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-           ON CONFLICT(user_id, manuscript_id, id) DO UPDATE SET
-             title = CASE WHEN excluded.last_modified > chapters.last_modified
-                          THEN excluded.title ELSE chapters.title END,
-             content = CASE WHEN excluded.last_modified > chapters.last_modified
-                            THEN excluded.content ELSE chapters.content END,
-             position = excluded.position,
-             last_modified = MAX(chapters.last_modified, excluded.last_modified)`,
-        );
-
-        (m.chapters || []).forEach((c: any, idx: number) => {
-          upCh.run(
-            LOCAL_USER_ID,
-            mId,
-            c.id,
-            c.title || '',
-            c.content || '',
-            idx,
-            c.lastModified || mLast,
-          );
-        });
-      });
-      tx();
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(mId)) {
+        throw new Error('Invalid manuscript id');
+      }
+      const rawLastModified = m.metadata.lastModified;
+      const mLast = typeof rawLastModified === 'number' &&
+        Number.isSafeInteger(rawLastModified) && rawLastModified >= 0
+        ? rawLastModified
+        : Date.now();
+      const chapters = (Array.isArray(m.chapters) ? m.chapters : []).map(
+        (chapter: Record<string, unknown>) => {
+          const id = String(chapter.id || '');
+          if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) {
+            throw new Error(`Invalid chapter id: ${id}`);
+          }
+          return {
+            id,
+            title: typeof chapter.title === 'string' ? chapter.title : '',
+            content: typeof chapter.content === 'string' ? chapter.content : '',
+            lastModified:
+              typeof chapter.lastModified === 'number' && chapter.lastModified >= 0
+                ? chapter.lastModified
+                : mLast,
+          };
+        },
+      );
+      const manuscript: ManuscriptRecord = {
+        metadata: {
+          ...m.metadata,
+          id: mId,
+          title: typeof m.metadata.title === 'string' ? m.metadata.title : '',
+          author: typeof m.metadata.author === 'string'
+            ? m.metadata.author
+            : 'Uncredited Author',
+          lastModified: mLast,
+        },
+        chapters,
+      };
+      saveLegacyManuscript(LOCAL_USER_ID, manuscript);
 
       fs.renameSync(full, `${full}.imported`);
       imported++;

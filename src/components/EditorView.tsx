@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { EditorContent, ReactRenderer } from '@tiptap/react';
 import { useChronicleEditor, UseChronicleEditorProps } from '../hooks/useChronicleEditor';
 import { SmartThesaurus } from './SmartThesaurus';
-import { CollabEditor } from './CollabEditor';
 import { CommandPortal } from './CommandPortal';
 import { cn } from '../lib/utils';
+import { authService } from '../services/authService';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, Check, X, Sparkles, Loader2 } from 'lucide-react';
 import { getAiResponse, getAiSpeech } from '../services/aiService';
@@ -18,6 +18,9 @@ import { SelectionActionsHost } from '../plugins/host/SelectionActionsHost';
 import tippy, { delegate } from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 import 'tippy.js/animations/shift-away.css';
+
+// Yjs + Hocuspocus are only downloaded for the explicit collaboration opt-in.
+const CollabEditor = lazy(() => import('./CollabEditor').then((m) => ({ default: m.CollabEditor })));
 
 interface EditorViewProps {
   isDarkMode: boolean;
@@ -725,12 +728,13 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const collabEnabled =
     typeof window !== 'undefined' &&
     localStorage.getItem('chronicle_collab') === '1' &&
+    !!authService.userId &&
     !isTitlePage;
   const collabUrl =
     typeof window !== 'undefined'
       ? `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/collab`
       : '';
-  const collabDocName = `${manuscriptId}:${chapterId || 'content'}`;
+  const collabDocName = `${encodeURIComponent(authService.userId ?? '')}/${manuscriptId}:${chapterId || 'content'}`;
   // Bearer token (oidc/token mode) so the secured collab socket authenticates.
   const collabToken =
     typeof window !== 'undefined' ? localStorage.getItem('chronicle_token') ?? undefined : undefined;
@@ -818,12 +822,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
           )}
           <div data-outline="content">
             {collabEnabled ? (
-              <CollabEditor
-                docName={collabDocName}
-                collabUrl={collabUrl}
-                token={collabToken}
-                className="w-full"
-              />
+              <Suspense fallback={<div className="min-h-[500px] opacity-40">Connecting collaborative editor…</div>}>
+                <CollabEditor
+                  docName={collabDocName}
+                  collabUrl={collabUrl}
+                  token={collabToken}
+                  className="w-full"
+                />
+              </Suspense>
             ) : (
               <EditorContent
                 editor={editor}
@@ -1030,4 +1036,3 @@ export const EditorView: React.FC<EditorViewProps> = ({
     </div>
   );
 };
-

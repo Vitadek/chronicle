@@ -1,9 +1,21 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db';
-import { config } from '../config';
-import { ncMirror } from '../nextcloud/webdav';
-import { storage } from '../lib/storage/HybridManager';
+import {
+  manuscriptTombstoneData,
+  purgeChapterCollaborationResidue,
+  purgeManuscriptCollaborationResidue,
+  recordChange,
+  touchManuscriptForChapterChange,
+} from '../lib/manuscriptRepository';
+import {
+  enqueueChapterReplica,
+  enqueueChapterReplicaTombstone,
+  enqueueManuscriptReplica,
+  enqueueManuscriptReplicaTombstone,
+  enqueueProfileReplica,
+} from '../lib/portableReplica';
+import { getSyncHistoryEpoch } from '../lib/syncHistory';
 
 const router = Router();
 
@@ -27,17 +39,24 @@ const router = Router();
  * the same book don't clobber each other.
  *
  * Tombstones: deleted rows stick around (with deleted_at set) so the delete
- * propagates to other clients on their next pull. They're GC'd after
- * config.tombstoneRetentionMs (default 30 days), which is plenty of time
- * for any reasonable client offline window.
+ * propagates even to clients that remain offline for a long time. They cannot
+ * be compacted safely until Chronicle tracks per-device cursor acknowledgments.
  *
- * Echo avoidance: records the client just pushed aren't returned in pull,
- * so the client doesn't see its own write bounce back.
+ * Push results are deliberately eligible for pull. A client whose stale write
+ * lost conflict resolution must receive the authoritative record before it
+ * advances its cursor; filtering every pushed key caused permanent divergence.
  */
 
 const ManuscriptIn = z.object({
   id: z.string().min(1).max(64),
-  data: z.string().max(50_000),
+  data: z.string().max(50_000).refine((value) => {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return !!parsed && typeof parsed === 'object' && !Array.isArray(parsed);
+    } catch {
+      return false;
+    }
+  }, 'data must be a JSON object'),
   last_modified: z.number().int().positive(),
   deleted: z.boolean().optional(),
 });
@@ -53,7 +72,14 @@ const ChapterIn = z.object({
 });
 
 const ProfileIn = z.object({
-  data: z.string().max(50_000),
+  data: z.string().max(50_000).refine((value) => {
+    try {
+      JSON.parse(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }, 'data must be valid JSON'),
   last_modified: z.number().int().positive(),
 });
 
@@ -78,7 +104,10 @@ const SyncBody = z.object({
     .default({ manuscripts: [], chapters: [], plugins: [] }),
 });
 
-router.post('/sync', (req, res) => {
+// Mounted at /api/sync, so the root route is the public POST /api/sync
+// contract. The old `/sync` suffix made the real endpoint /api/sync/sync while
+// every client and the documentation called /api/sync.
+router.post('/', (req, res) => {
   const parsed = SyncBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid sync payload', details: parsed.error.flatten() });
@@ -89,52 +118,70 @@ router.post('/sync', (req, res) => {
   const userId = req.userId!;
   const serverTime = Date.now();
 
-  // Track keys the client pushed so we don't echo them back in pull.
-  const pushedManuscriptIds = new Set(push.manuscripts.map((m) => m.id));
-  const pushedChapterKeys = new Set(push.chapters.map((c) => `${c.manuscript_id}:${c.id}`));
-  const pushedPluginIds = new Set(push.plugins.map((p) => p.id));
-  const profilePushed = !!push.profile;
-
-  // Collect mirror jobs to run *after* the transaction commits.
-  type MirrorJob = () => Promise<void>;
-  const mirrorJobs: MirrorJob[] = [];
-
   const getMs = db.prepare(
-    'SELECT last_modified FROM manuscripts WHERE user_id = ? AND id = ?',
+    'SELECT last_modified, deleted_at, revision FROM manuscripts WHERE user_id = ? AND id = ?',
   );
   const upMs = db.prepare(
-    `INSERT INTO manuscripts (user_id, id, data, last_modified, deleted_at)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO manuscripts (user_id, id, data, last_modified, deleted_at, revision)
+     VALUES (?, ?, ?, ?, ?, 1)
      ON CONFLICT(user_id, id) DO UPDATE SET
        data          = excluded.data,
        last_modified = excluded.last_modified,
-       deleted_at    = excluded.deleted_at`,
+       deleted_at    = excluded.deleted_at,
+       revision      = manuscripts.revision + 1`,
   );
+  const scrubRetainedMs = db.prepare(
+    'UPDATE manuscripts SET data = ? WHERE user_id = ? AND id = ?',
+  );
+  const scrubRetainedMsChapters = db.prepare(`
+    UPDATE chapters SET title = NULL, content = NULL, position = NULL
+    WHERE user_id = ? AND manuscript_id = ? AND deleted_at IS NOT NULL
+  `);
 
   const getCh = db.prepare(
-    'SELECT last_modified FROM chapters WHERE user_id = ? AND manuscript_id = ? AND id = ?',
+    `SELECT last_modified, deleted_at, revision FROM chapters
+      WHERE user_id = ? AND manuscript_id = ? AND id = ?`,
+  );
+  const hasActiveManuscript = db.prepare(
+    'SELECT 1 FROM manuscripts WHERE user_id = ? AND id = ? AND deleted_at IS NULL',
+  );
+  const getActiveChapters = db.prepare(
+    `SELECT id, revision FROM chapters
+      WHERE user_id = ? AND manuscript_id = ? AND deleted_at IS NULL`,
+  );
+  const tombstoneChapter = db.prepare(
+    `UPDATE chapters
+        SET title = NULL, content = NULL, position = NULL,
+            last_modified = ?, deleted_at = ?, revision = ?
+      WHERE user_id = ? AND manuscript_id = ? AND id = ?`,
   );
   const upCh = db.prepare(
     `INSERT INTO chapters
-       (user_id, manuscript_id, id, title, content, position, last_modified, deleted_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       (user_id, manuscript_id, id, title, content, position, last_modified, deleted_at, revision)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
      ON CONFLICT(user_id, manuscript_id, id) DO UPDATE SET
        title         = excluded.title,
        content       = excluded.content,
        position      = excluded.position,
        last_modified = excluded.last_modified,
-       deleted_at    = excluded.deleted_at`,
+       deleted_at    = excluded.deleted_at,
+       revision      = chapters.revision + 1`,
   );
+  const scrubRetainedCh = db.prepare(`
+    UPDATE chapters SET title = NULL, content = NULL, position = NULL
+    WHERE user_id = ? AND manuscript_id = ? AND id = ?
+  `);
 
   const getProfile = db.prepare(
-    'SELECT last_modified FROM profiles WHERE user_id = ?',
+    'SELECT last_modified, revision FROM profiles WHERE user_id = ?',
   );
   const upProfile = db.prepare(
-    `INSERT INTO profiles (user_id, data, last_modified)
-     VALUES (?, ?, ?)
+    `INSERT INTO profiles (user_id, data, last_modified, revision)
+     VALUES (?, ?, ?, 1)
      ON CONFLICT(user_id) DO UPDATE SET
        data          = excluded.data,
-       last_modified = excluded.last_modified`,
+       last_modified = excluded.last_modified,
+       revision      = profiles.revision + 1`,
   );
 
   const getPlugin = db.prepare(
@@ -154,83 +201,135 @@ router.post('/sync', (req, res) => {
   const apply = db.transaction(() => {
     // ---- manuscripts ----
     for (const m of push.manuscripts) {
-      const existing = getMs.get(userId, m.id) as { last_modified: number } | undefined;
+      const existing = getMs.get(userId, m.id) as {
+        last_modified: number;
+        deleted_at: number | null;
+        revision: number;
+      } | undefined;
+      // Retained tombstones are terminal for this legacy LWW protocol. An
+      // offline client's future/fast clock must never resurrect a deleted id.
+      if (existing && existing.deleted_at !== null) {
+        scrubRetainedMs.run(manuscriptTombstoneData(m.id), userId, m.id);
+        scrubRetainedMsChapters.run(userId, m.id);
+        purgeManuscriptCollaborationResidue(userId, m.id);
+        continue;
+      }
       if (!existing || m.last_modified > existing.last_modified) {
-        upMs.run(userId, m.id, m.data, m.last_modified, m.deleted ? m.last_modified : null);
-        
-        // Redundant Backup (Hybrid Storage)
-        if (config.storageProvider === 'hybrid') {
-          const key = `manuscripts/${userId}/${m.id}/manuscript.json`;
-          if (m.deleted) {
-            mirrorJobs.push(() => storage.delete(`manuscripts/${userId}/${m.id}`));
-          } else {
-            mirrorJobs.push(() => storage.put(key, m.data, 'application/json'));
+        const data = m.deleted ? manuscriptTombstoneData(m.id) : m.data;
+        upMs.run(userId, m.id, data, m.last_modified, m.deleted ? m.last_modified : null);
+        const revision = (existing?.revision ?? 0) + 1;
+        recordChange(userId, 'manuscript', null, m.id, m.deleted ? 'delete' : 'upsert', revision);
+
+        if (m.deleted) {
+          purgeManuscriptCollaborationResidue(userId, m.id);
+          enqueueManuscriptReplicaTombstone(userId, m.id, m.last_modified, revision);
+          const chapters = getActiveChapters.all(userId, m.id) as Array<{
+            id: string;
+            revision: number;
+          }>;
+          for (const chapter of chapters) {
+            const chapterRevision = chapter.revision + 1;
+            tombstoneChapter.run(
+              m.last_modified,
+              m.last_modified,
+              chapterRevision,
+              userId,
+              m.id,
+              chapter.id,
+            );
+            recordChange(
+              userId,
+              'chapter',
+              m.id,
+              chapter.id,
+              'delete',
+              chapterRevision,
+            );
+            enqueueChapterReplicaTombstone(
+              userId,
+              m.id,
+              chapter.id,
+              m.last_modified,
+              chapterRevision,
+            );
           }
+        } else {
+          enqueueManuscriptReplica(userId, m.id, m.data, m.last_modified, revision);
         }
 
-        if (config.nextcloud.mirrorEnabled) {
-          if (m.deleted) {
-            mirrorJobs.push(() => ncMirror.deleteManuscript(userId, m.id));
-          } else {
-            mirrorJobs.push(() => ncMirror.manuscript(userId, m.id, m.data));
-          }
-        }
       }
     }
 
     // ---- chapters ----
     for (const c of push.chapters) {
       const existing = getCh.get(userId, c.manuscript_id, c.id) as
-        | { last_modified: number }
+        | { last_modified: number; deleted_at: number | null; revision: number }
         | undefined;
+      // Never create an orphan or resurrect a chapter beneath a manuscript
+      // tombstoned earlier in this batch. A delete for an unknown chapter is
+      // already converged and needs no row of its own.
+      if (!c.deleted && !hasActiveManuscript.get(userId, c.manuscript_id)) continue;
+      if (c.deleted && !existing) continue;
+      if (existing && existing.deleted_at !== null) {
+        scrubRetainedCh.run(userId, c.manuscript_id, c.id);
+        purgeChapterCollaborationResidue(userId, c.manuscript_id, c.id);
+        continue;
+      }
       if (!existing || c.last_modified > existing.last_modified) {
         upCh.run(
           userId,
           c.manuscript_id,
           c.id,
-          c.title ?? null,
-          c.content ?? null,
-          c.position ?? null,
+          c.deleted ? null : (c.title ?? null),
+          c.deleted ? null : (c.content ?? null),
+          c.deleted ? null : (c.position ?? null),
           c.last_modified,
           c.deleted ? c.last_modified : null,
         );
+        const revision = (existing?.revision ?? 0) + 1;
+        recordChange(userId, 'chapter', c.manuscript_id, c.id, c.deleted ? 'delete' : 'upsert', revision);
 
-        // Redundant Backup (Hybrid Storage)
-        if (config.storageProvider === 'hybrid') {
-          const key = `manuscripts/${userId}/${c.manuscript_id}/chapters/${c.id}.html`;
-          if (c.deleted) {
-            mirrorJobs.push(() => storage.delete(key));
-          } else {
-            const wrapped = `<!DOCTYPE html><html><body><h1>${c.title || 'Untitled'}</h1>${c.content || ''}</body></html>`;
-            mirrorJobs.push(() => storage.put(key, wrapped, 'text/html'));
-          }
+        if (c.deleted) {
+          purgeChapterCollaborationResidue(userId, c.manuscript_id, c.id);
+          enqueueChapterReplicaTombstone(
+            userId,
+            c.manuscript_id,
+            c.id,
+            c.last_modified,
+            revision,
+          );
+        } else {
+          enqueueChapterReplica(
+            userId,
+            c.manuscript_id,
+            c.id,
+            c.title ?? '',
+            c.content ?? '',
+            c.position ?? 0,
+            c.last_modified,
+            revision,
+          );
         }
+        touchManuscriptForChapterChange(userId, c.manuscript_id, c.last_modified);
 
-        if (config.nextcloud.mirrorEnabled) {
-          if (c.deleted) {
-            mirrorJobs.push(() => ncMirror.deleteChapter(userId, c.manuscript_id, c.id));
-          } else {
-            mirrorJobs.push(() =>
-              ncMirror.chapter(
-                userId,
-                c.manuscript_id,
-                c.id,
-                c.title ?? '',
-                c.content ?? '',
-              ),
-            );
-          }
-        }
       }
     }
 
     // ---- profile ----
     if (push.profile) {
       const existing = getProfile.get(userId) as
-        | { last_modified: number }
+        | { last_modified: number; revision: number }
         | undefined;
       if (!existing || push.profile.last_modified > existing.last_modified) {
         upProfile.run(userId, push.profile.data, push.profile.last_modified);
+        const revision = (existing?.revision ?? 0) + 1;
+        recordChange(userId, 'profile', null, 'profile', 'upsert', revision);
+        enqueueProfileReplica(
+          userId,
+          push.profile.data,
+          push.profile.last_modified,
+          revision,
+        );
       }
     }
 
@@ -272,9 +371,7 @@ router.post('/sync', (req, res) => {
       last_modified: number;
       deleted_at: number | null;
     }>
-  )
-    .filter((r) => !pushedManuscriptIds.has(r.id))
-    .map((r) => ({
+  ).map((r) => ({
       id: r.id,
       data: r.data,
       last_modified: r.last_modified,
@@ -297,9 +394,7 @@ router.post('/sync', (req, res) => {
       last_modified: number;
       deleted_at: number | null;
     }>
-  )
-    .filter((r) => !pushedChapterKeys.has(`${r.manuscript_id}:${r.id}`))
-    .map((r) => ({
+  ).map((r) => ({
       id: r.id,
       manuscript_id: r.manuscript_id,
       title: r.title,
@@ -310,14 +405,12 @@ router.post('/sync', (req, res) => {
     }));
 
   let profileOut: { data: string; last_modified: number } | null = null;
-  if (!profilePushed) {
-    const row = db
-      .prepare(
-        'SELECT data, last_modified FROM profiles WHERE user_id = ? AND last_modified > ?',
-      )
-      .get(userId, since) as { data: string; last_modified: number } | undefined;
-    if (row) profileOut = row;
-  }
+  const profileRow = db
+    .prepare(
+      'SELECT data, last_modified FROM profiles WHERE user_id = ? AND last_modified > ?',
+    )
+    .get(userId, since) as { data: string; last_modified: number } | undefined;
+  if (profileRow) profileOut = profileRow;
 
   const pluginsOut = (
     db
@@ -334,9 +427,7 @@ router.post('/sync', (req, res) => {
       state: string;
       last_modified: number;
     }>
-  )
-    .filter((r) => !pushedPluginIds.has(r.id))
-    .map((r) => ({
+  ).map((r) => ({
       id: r.id,
       plugin_id: r.plugin_id,
       manuscript_id: r.manuscript_id,
@@ -344,17 +435,6 @@ router.post('/sync', (req, res) => {
       state: r.state,
       last_modified: r.last_modified,
     }));
-
-  // Fire-and-forget Nextcloud mirror. Sync response never waits on it.
-  if (mirrorJobs.length > 0) {
-    Promise.allSettled(mirrorJobs.map((j) => j())).then((results) => {
-      for (const r of results) {
-        if (r.status === 'rejected') {
-          console.warn('NC mirror job failed:', r.reason);
-        }
-      }
-    });
-  }
 
   res.json({
     serverTime,
@@ -364,6 +444,537 @@ router.post('/sync', (req, res) => {
       profile: profileOut,
       plugins: pluginsOut,
     },
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sync v2 — server cursor + per-record optimistic revisions
+// ---------------------------------------------------------------------------
+
+const V2ManuscriptChange = z.discriminatedUnion('operation', [
+  z.object({
+    entity: z.literal('manuscript'),
+    operation: z.literal('upsert'),
+    id: z.string().min(1).max(64),
+    baseRevision: z.number().int().nonnegative(),
+    data: z.string().max(50_000).refine((value) => {
+      try {
+        const parsed = JSON.parse(value);
+        return !!parsed && typeof parsed === 'object' && !Array.isArray(parsed);
+      } catch {
+        return false;
+      }
+    }, 'data must be a JSON object'),
+  }),
+  z.object({
+    entity: z.literal('manuscript'),
+    operation: z.literal('delete'),
+    id: z.string().min(1).max(64),
+    baseRevision: z.number().int().positive(),
+  }),
+]);
+
+const V2ChapterChange = z.discriminatedUnion('operation', [
+  z.object({
+    entity: z.literal('chapter'),
+    operation: z.literal('upsert'),
+    manuscriptId: z.string().min(1).max(64),
+    id: z.string().min(1).max(64),
+    baseRevision: z.number().int().nonnegative(),
+    title: z.string().max(500),
+    content: z.string().max(5_000_000),
+    position: z.number().int().nonnegative(),
+  }),
+  z.object({
+    entity: z.literal('chapter'),
+    operation: z.literal('delete'),
+    manuscriptId: z.string().min(1).max(64),
+    id: z.string().min(1).max(64),
+    baseRevision: z.number().int().positive(),
+  }),
+]);
+
+const V2ProfileChange = z.object({
+  entity: z.literal('profile'),
+  operation: z.literal('upsert'),
+  baseRevision: z.number().int().nonnegative(),
+  data: z.string().max(50_000).refine((value) => {
+    try {
+      JSON.parse(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }, 'data must be valid JSON'),
+});
+
+const SyncV2Body = z.object({
+  cursor: z.number().int().nonnegative().default(0),
+  epoch: z.string().uuid().optional(),
+  changes: z
+    .array(z.union([V2ManuscriptChange, V2ChapterChange, V2ProfileChange]))
+    .max(2_000)
+    .default([]),
+});
+
+type V2Input = z.infer<typeof SyncV2Body>['changes'][number];
+type V2Result = {
+  entity: V2Input['entity'];
+  id: string;
+  manuscriptId?: string;
+  status: 'accepted' | 'conflict';
+  /** Present when a matching record revision was rejected for protocol state. */
+  reason?: 'history_epoch_mismatch' | 'cursor_ahead_of_history';
+  revision: number;
+  current?: unknown;
+};
+
+function v2Key(change: V2Input): { id: string; manuscriptId?: string } {
+  if (change.entity === 'profile') return { id: 'profile' };
+  if (change.entity === 'chapter') {
+    return { id: change.id, manuscriptId: change.manuscriptId };
+  }
+  return { id: change.id };
+}
+
+function currentV2Record(
+  userId: string,
+  entity: 'manuscript' | 'chapter' | 'profile',
+  id: string,
+  manuscriptId?: string | null,
+): { revision: number; value: unknown } | null {
+  if (entity === 'manuscript') {
+    const row = db
+      .prepare(
+        `SELECT data, last_modified, deleted_at, revision
+           FROM manuscripts WHERE user_id = ? AND id = ?`,
+      )
+      .get(userId, id) as
+      | { data: string; last_modified: number; deleted_at: number | null; revision: number }
+      | undefined;
+    if (!row) return null;
+    if (row.deleted_at !== null) {
+      return {
+        revision: row.revision,
+        value: {
+          entity,
+          id,
+          operation: 'delete',
+          revision: row.revision,
+          updatedAt: row.last_modified,
+        },
+      };
+    }
+    return {
+      revision: row.revision,
+      value: {
+        entity,
+        id,
+        operation: 'upsert',
+        data: row.data,
+        revision: row.revision,
+        updatedAt: row.last_modified,
+      },
+    };
+  }
+  if (entity === 'chapter') {
+    const row = db
+      .prepare(
+        `SELECT title, content, position, last_modified, deleted_at, revision
+           FROM chapters
+          WHERE user_id = ? AND manuscript_id = ? AND id = ?`,
+      )
+      .get(userId, manuscriptId, id) as
+      | {
+          title: string | null;
+          content: string | null;
+          position: number | null;
+          last_modified: number;
+          deleted_at: number | null;
+          revision: number;
+        }
+      | undefined;
+    if (!row) return null;
+    if (row.deleted_at !== null) {
+      return {
+        revision: row.revision,
+        value: {
+          entity,
+          manuscriptId,
+          id,
+          operation: 'delete',
+          revision: row.revision,
+          updatedAt: row.last_modified,
+        },
+      };
+    }
+    return {
+      revision: row.revision,
+      value: {
+        entity,
+        manuscriptId,
+        id,
+        operation: 'upsert',
+        title: row.title,
+        content: row.content,
+        position: row.position,
+        revision: row.revision,
+        updatedAt: row.last_modified,
+      },
+    };
+  }
+  const row = db
+    .prepare('SELECT data, last_modified, revision FROM profiles WHERE user_id = ?')
+    .get(userId) as { data: string; last_modified: number; revision: number } | undefined;
+  if (!row) return null;
+  return {
+    revision: row.revision,
+    value: {
+      entity,
+      id: 'profile',
+      operation: 'upsert',
+      data: row.data,
+      revision: row.revision,
+      updatedAt: row.last_modified,
+    },
+  };
+}
+
+router.post('/v2', (req, res) => {
+  const parsed = SyncV2Body.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid sync v2 payload', details: parsed.error.flatten() });
+    return;
+  }
+
+  const userId = req.userId!;
+  let historyResetRequired = false;
+  const results: V2Result[] = [];
+  const apply = db.transaction(() => {
+    const transactionEpoch = getSyncHistoryEpoch();
+    const preMutationMaxCursor = ((db
+      .prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM change_log WHERE user_id = ?')
+      .get(userId) as { seq: number }).seq ?? 0);
+    // A revision token is meaningful only within the history that issued it.
+    // Validate both reset signals inside the same immediate transaction that
+    // would apply writes. This serializes a concurrent restore process and
+    // prevents an incoming write from advancing MAX(seq) enough to hide the
+    // numeric compatibility reset that existed when the request arrived.
+    const resetReason: V2Result['reason'] = (
+      parsed.data.epoch !== undefined && parsed.data.epoch !== transactionEpoch
+    )
+      ? 'history_epoch_mismatch'
+      : parsed.data.cursor > preMutationMaxCursor
+        ? 'cursor_ahead_of_history'
+        : undefined;
+    historyResetRequired = resetReason !== undefined;
+    if (historyResetRequired) {
+      // Keep the normal push+pull envelope so clients can consume the reset
+      // replay in this round trip. Every attempted mutation is an explicit
+      // conflict with the authoritative record; none reaches the mutation
+      // loop, change log, or recovery-replica outbox.
+      for (const incoming of parsed.data.changes) {
+        const key = v2Key(incoming);
+        const current = currentV2Record(
+          userId,
+          incoming.entity,
+          key.id,
+          key.manuscriptId,
+        );
+        results.push({
+          entity: incoming.entity,
+          ...key,
+          status: 'conflict',
+          reason: resetReason,
+          revision: current?.revision ?? 0,
+          current: current?.value ?? null,
+        });
+      }
+      return transactionEpoch;
+    }
+
+    for (const incoming of parsed.data.changes) {
+      const key = v2Key(incoming);
+      const current = currentV2Record(
+        userId,
+        incoming.entity,
+        key.id,
+        key.manuscriptId,
+      );
+      const currentRevision = current?.revision ?? 0;
+      if (currentRevision !== incoming.baseRevision) {
+        results.push({
+          entity: incoming.entity,
+          ...key,
+          status: 'conflict',
+          revision: currentRevision,
+          current: current?.value ?? null,
+        });
+        continue;
+      }
+
+      const revision = currentRevision + 1;
+      const now = Date.now();
+      if (incoming.entity === 'manuscript') {
+        if (incoming.operation === 'upsert') {
+          db.prepare(
+            `INSERT INTO manuscripts
+              (user_id, id, data, last_modified, deleted_at, revision)
+             VALUES (?, ?, ?, ?, NULL, ?)
+             ON CONFLICT(user_id, id) DO UPDATE SET
+               data = excluded.data,
+               last_modified = excluded.last_modified,
+               deleted_at = NULL,
+               revision = excluded.revision`,
+          ).run(userId, incoming.id, incoming.data, now, revision);
+          enqueueManuscriptReplica(
+            userId,
+            incoming.id,
+            incoming.data,
+            now,
+            revision,
+          );
+        } else {
+          db.prepare(
+            `UPDATE manuscripts
+                SET data = ?, deleted_at = ?, last_modified = ?, revision = ?
+              WHERE user_id = ? AND id = ?`,
+          ).run(
+            manuscriptTombstoneData(incoming.id),
+            now,
+            now,
+            revision,
+            userId,
+            incoming.id,
+          );
+          purgeManuscriptCollaborationResidue(userId, incoming.id);
+          enqueueManuscriptReplicaTombstone(userId, incoming.id, now, revision);
+
+          const chapters = db
+            .prepare(
+              `SELECT id, revision FROM chapters
+                WHERE user_id = ? AND manuscript_id = ? AND deleted_at IS NULL`,
+            )
+            .all(userId, incoming.id) as Array<{ id: string; revision: number }>;
+          const tombstone = db.prepare(
+            `UPDATE chapters
+                SET title = NULL, content = NULL, position = NULL,
+                    deleted_at = ?, last_modified = ?, revision = ?
+              WHERE user_id = ? AND manuscript_id = ? AND id = ?`,
+          );
+          for (const chapter of chapters) {
+            const chapterRevision = chapter.revision + 1;
+            tombstone.run(
+              now,
+              now,
+              chapterRevision,
+              userId,
+              incoming.id,
+              chapter.id,
+            );
+            recordChange(
+              userId,
+              'chapter',
+              incoming.id,
+              chapter.id,
+              'delete',
+              chapterRevision,
+              now,
+            );
+            enqueueChapterReplicaTombstone(
+              userId,
+              incoming.id,
+              chapter.id,
+              now,
+              chapterRevision,
+            );
+          }
+        }
+        recordChange(
+          userId,
+          'manuscript',
+          null,
+          incoming.id,
+          incoming.operation,
+          revision,
+          now,
+        );
+      } else if (incoming.entity === 'chapter') {
+        if (incoming.operation === 'upsert') {
+          const parent = db
+            .prepare(
+              'SELECT 1 FROM manuscripts WHERE user_id = ? AND id = ? AND deleted_at IS NULL',
+            )
+            .get(userId, incoming.manuscriptId);
+          if (!parent) {
+            results.push({
+              entity: 'chapter',
+              ...key,
+              status: 'conflict',
+              revision: currentRevision,
+              current: null,
+            });
+            continue;
+          }
+          db.prepare(
+            `INSERT INTO chapters
+              (user_id, manuscript_id, id, title, content, position,
+               last_modified, deleted_at, revision)
+             VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)
+             ON CONFLICT(user_id, manuscript_id, id) DO UPDATE SET
+               title = excluded.title,
+               content = excluded.content,
+               position = excluded.position,
+               last_modified = excluded.last_modified,
+               deleted_at = NULL,
+               revision = excluded.revision`,
+          ).run(
+            userId,
+            incoming.manuscriptId,
+            incoming.id,
+            incoming.title,
+            incoming.content,
+            incoming.position,
+            now,
+            revision,
+          );
+          enqueueChapterReplica(
+            userId,
+            incoming.manuscriptId,
+            incoming.id,
+            incoming.title,
+            incoming.content,
+            incoming.position,
+            now,
+            revision,
+          );
+        } else {
+          db.prepare(
+            `UPDATE chapters
+                SET title = NULL, content = NULL, position = NULL,
+                    deleted_at = ?, last_modified = ?, revision = ?
+              WHERE user_id = ? AND manuscript_id = ? AND id = ?`,
+          ).run(now, now, revision, userId, incoming.manuscriptId, incoming.id);
+          purgeChapterCollaborationResidue(
+            userId,
+            incoming.manuscriptId,
+            incoming.id,
+          );
+          enqueueChapterReplicaTombstone(
+            userId,
+            incoming.manuscriptId,
+            incoming.id,
+            now,
+            revision,
+          );
+        }
+        recordChange(
+          userId,
+          'chapter',
+          incoming.manuscriptId,
+          incoming.id,
+          incoming.operation,
+          revision,
+          now,
+        );
+        touchManuscriptForChapterChange(userId, incoming.manuscriptId, now);
+      } else {
+        db.prepare(
+          `INSERT INTO profiles (user_id, data, last_modified, revision)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(user_id) DO UPDATE SET
+             data = excluded.data,
+             last_modified = excluded.last_modified,
+             revision = excluded.revision`,
+        ).run(userId, incoming.data, now, revision);
+        recordChange(userId, 'profile', null, 'profile', 'upsert', revision, now);
+        enqueueProfileReplica(userId, incoming.data, now, revision);
+      }
+
+      results.push({
+        entity: incoming.entity,
+        ...key,
+        status: 'accepted',
+        revision,
+      });
+    }
+    return transactionEpoch;
+  });
+
+  let epoch: string;
+  try {
+    // Pull-only browser polling stays a read transaction; requests carrying
+    // mutations acquire the write reservation before validating the epoch.
+    epoch = parsed.data.changes.length > 0 ? apply.immediate() : apply();
+  } catch (error) {
+    console.error('Sync v2 transaction failed:', error);
+    res.status(500).json({ error: 'Sync failed' });
+    return;
+  }
+
+  // A later mutation in the same batch can advance a record that an earlier
+  // result referred to. In particular, a chapter mutation also advances its
+  // aggregate manuscript revision. Return only final authoritative tokens so
+  // clients never persist a revision that is already stale on receipt.
+  for (const result of results) {
+    const current = currentV2Record(
+      userId,
+      result.entity,
+      result.id,
+      result.manuscriptId,
+    );
+    result.revision = current?.revision ?? 0;
+    if (result.status === 'conflict') result.current = current?.value ?? null;
+  }
+
+  const pageSize = 1_000;
+  const currentMaxCursor = ((db
+    .prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM change_log WHERE user_id = ?')
+    .get(userId) as { seq: number }).seq ?? 0);
+  // Epoch mismatch is the durable restore signal. The max-cursor check remains
+  // as a compatibility fallback for clients that have not learned an epoch or
+  // for an older database snapshot that predates the epoch marker.
+  const reset = historyResetRequired;
+  const pullCursor = reset ? 0 : parsed.data.cursor;
+  const fetchedLogRows = db
+    .prepare(
+      `SELECT seq, entity, manuscript_id, record_id
+         FROM change_log
+        WHERE user_id = ? AND seq > ?
+        ORDER BY seq ASC
+        LIMIT ?`,
+    )
+    .all(userId, pullCursor, pageSize + 1) as Array<{
+    seq: number;
+    entity: 'manuscript' | 'chapter' | 'profile';
+    manuscript_id: string | null;
+    record_id: string;
+  }>;
+  const hasMore = fetchedLogRows.length > pageSize;
+  const logRows = hasMore ? fetchedLogRows.slice(0, pageSize) : fetchedLogRows;
+
+  // Multiple mutations to one record collapse to its latest authoritative
+  // representation, while the response cursor still advances past all of them.
+  const latest = new Map<string, (typeof logRows)[number]>();
+  for (const row of logRows) {
+    latest.set(`${row.entity}\0${row.manuscript_id ?? ''}\0${row.record_id}`, row);
+  }
+  const changes = [...latest.values()]
+    .map((row) =>
+      currentV2Record(userId, row.entity, row.record_id, row.manuscript_id)?.value ?? null,
+    )
+    .filter((value): value is NonNullable<typeof value> => value !== null);
+  const cursor = logRows.length
+    ? logRows[logRows.length - 1].seq
+    : currentMaxCursor;
+
+  res.json({
+    epoch,
+    cursor,
+    results,
+    changes,
+    hasMore,
+    ...(reset ? { reset: true } : {}),
   });
 });
 

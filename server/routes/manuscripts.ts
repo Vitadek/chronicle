@@ -1,226 +1,166 @@
 import { Router } from 'express';
-import path from 'path';
-import fs from 'fs/promises';
-import { config } from '../config';
-import { db } from '../db';
-import { ncMirror } from '../nextcloud/webdav';
+import { z } from 'zod';
+import {
+  deleteChapter,
+  deleteManuscript,
+  listManuscripts,
+  loadManuscript,
+  saveLegacyManuscript,
+  type ManuscriptRecord,
+} from '../lib/manuscriptRepository';
 
 const router = Router();
 
 /**
  * Backward-compatible manuscript CRUD.
  *
- * The existing UI uses these endpoints (manuscriptService.ts). To avoid
- * breaking it, we keep them — but they now read/write against the SQLite
- * store that sync uses, so both APIs see the same data. Single source of
- * truth, no dual-store confusion.
- *
- * Going forward, prefer /api/sync from new clients. This module exists for
- * the in-tree UI which hasn't been migrated yet.
+ * The payload is still the web/mobile Manuscript shape, but persistence is
+ * record-aware: metadata and each chapter carry independent revisions. Missing
+ * chapters are never interpreted as deletes; deletion has an explicit endpoint.
  */
 
-interface ChapterJson {
-  id: string;
-  title: string;
-  content: string;
-  lastModified: number;
-}
-interface ManuscriptJson {
-  metadata: {
-    id: string;
-    title: string;
-    author: string;
-    lastModified: number;
-    [k: string]: unknown;
-  };
-  chapters: ChapterJson[];
-}
+const Id = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/);
+const Chapter = z.object({
+  id: Id,
+  title: z.string().max(500),
+  content: z.string().max(5_000_000),
+  lastModified: z.number().int().nonnegative(),
+  revision: z.number().int().positive().optional(),
+});
+const Metadata = z
+  .object({
+    id: Id,
+    title: z.string().max(1_000),
+    author: z.string().max(1_000),
+    lastModified: z.number().int().nonnegative(),
+    revision: z.number().int().positive().optional(),
+  })
+  .passthrough();
+const ManuscriptBody = z.object({
+  metadata: Metadata,
+  chapters: z.array(Chapter).max(10_000),
+});
+const DeleteChapterBody = z
+  .object({ baseRevision: z.number().int().positive().optional() })
+  .default({});
+const DeleteManuscriptBody = DeleteChapterBody;
 
-/** Reassemble a Manuscript JSON object from the normalised SQLite tables. */
-function loadManuscript(userId: string, id: string): ManuscriptJson | null {
-  const mRow = db
-    .prepare(
-      'SELECT data, last_modified, deleted_at FROM manuscripts WHERE user_id = ? AND id = ?',
-    )
-    .get(userId, id) as
-    | { data: string; last_modified: number; deleted_at: number | null }
-    | undefined;
-  if (!mRow || mRow.deleted_at) return null;
-
-  const cRows = db
-    .prepare(
-      `SELECT id, title, content, position, last_modified
-         FROM chapters
-        WHERE user_id = ? AND manuscript_id = ? AND deleted_at IS NULL
-        ORDER BY position ASC, last_modified ASC`,
-    )
-    .all(userId, id) as Array<{
-    id: string;
-    title: string | null;
-    content: string | null;
-    position: number | null;
-    last_modified: number;
-  }>;
-
-  const metadata = JSON.parse(mRow.data);
-  metadata.id = id;
-  metadata.lastModified = mRow.last_modified;
-
-  return {
-    metadata,
-    chapters: cRows.map((c) => ({
-      id: c.id,
-      title: c.title || '',
-      content: c.content || '',
-      lastModified: c.last_modified,
-    })),
-  };
-}
-
-/** Persist a Manuscript JSON object into the normalised tables. */
-function saveManuscript(userId: string, m: ManuscriptJson): void {
-  const mId = m.metadata.id;
-  const mLast = m.metadata.lastModified || Date.now();
-
-  // Strip chapter list out of metadata before storing.
-  const metaToStore = { ...m.metadata };
-  // Remove transient/computed fields we don't want duplicated.
-  delete (metaToStore as Record<string, unknown>).chapters;
-
-  const tx = db.transaction(() => {
-    db.prepare(
-      `INSERT INTO manuscripts (user_id, id, data, last_modified, deleted_at)
-       VALUES (?, ?, ?, ?, NULL)
-       ON CONFLICT(user_id, id) DO UPDATE SET
-         data = excluded.data,
-         last_modified = excluded.last_modified,
-         deleted_at = NULL`,
-    ).run(userId, mId, JSON.stringify(metaToStore), mLast);
-
-    // Replace chapter set: upsert what's here, soft-delete what's missing.
-    const incomingIds = new Set(m.chapters.map((c) => c.id));
-    const upCh = db.prepare(
-      `INSERT INTO chapters
-         (user_id, manuscript_id, id, title, content, position, last_modified, deleted_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-       ON CONFLICT(user_id, manuscript_id, id) DO UPDATE SET
-         title = excluded.title,
-         content = excluded.content,
-         position = excluded.position,
-         last_modified = excluded.last_modified,
-         deleted_at = NULL`,
-    );
-    m.chapters.forEach((c, idx) => {
-      upCh.run(
-        userId,
-        mId,
-        c.id,
-        c.title,
-        c.content,
-        idx,
-        c.lastModified || Date.now(),
-      );
-    });
-
-    // Tombstone any chapters this manuscript no longer contains.
-    const existing = db
-      .prepare(
-        'SELECT id FROM chapters WHERE user_id = ? AND manuscript_id = ? AND deleted_at IS NULL',
-      )
-      .all(userId, mId) as Array<{ id: string }>;
-    const now = Date.now();
-    for (const row of existing) {
-      if (!incomingIds.has(row.id)) {
-        db.prepare(
-          `UPDATE chapters SET deleted_at = ?, last_modified = ?
-            WHERE user_id = ? AND manuscript_id = ? AND id = ?`,
-        ).run(now, now, userId, mId, row.id);
-      }
-    }
-  });
-  tx();
-
-  // Best-effort Nextcloud mirror.
-  if (config.nextcloud.mirrorEnabled) {
-    Promise.allSettled([
-      ncMirror.manuscript(userId, mId, JSON.stringify(metaToStore)),
-      ...m.chapters.map((c) =>
-        ncMirror.chapter(userId, mId, c.id, c.title, c.content),
-      ),
-    ]).catch(() => {});
+function parseManuscript(body: unknown): ManuscriptRecord {
+  const parsed = ManuscriptBody.safeParse(body);
+  if (!parsed.success) {
+    const error = new Error('Invalid manuscript payload');
+    Object.assign(error, { status: 400, details: parsed.error.flatten() });
+    throw error;
   }
+  return parsed.data as ManuscriptRecord;
 }
 
 router.get('/', (req, res) => {
-  const userId = req.userId!;
-  const rows = db
-    .prepare(
-      `SELECT id, data, last_modified FROM manuscripts
-        WHERE user_id = ? AND deleted_at IS NULL
-        ORDER BY last_modified DESC`,
-    )
-    .all(userId) as Array<{ id: string; data: string; last_modified: number }>;
-
-  res.json(
-    rows.map((r) => {
-      const meta = JSON.parse(r.data);
-      meta.id = r.id;
-      meta.lastModified = r.last_modified;
-      return meta;
-    }),
-  );
+  res.json(listManuscripts(req.userId!));
 });
 
 router.get('/:id', (req, res) => {
-  const m = loadManuscript(req.userId!, req.params.id);
-  if (!m) {
+  const manuscript = loadManuscript(req.userId!, req.params.id);
+  if (!manuscript) {
     res.status(404).json({ error: 'Manuscript not found' });
     return;
   }
-  res.json(m);
+  res.json(manuscript);
 });
 
 router.post('/', (req, res) => {
-  const userId = req.userId!;
-  const m: ManuscriptJson = req.body;
-  if (!m?.metadata?.id) {
-    m.metadata = {
-      ...(m.metadata || ({} as ManuscriptJson['metadata'])),
-      id: Math.random().toString(36).slice(2, 11),
-      title: m.metadata?.title || 'Untitled',
-      author: m.metadata?.author || 'Uncredited Author',
-      lastModified: Date.now(),
-    };
+  try {
+    const manuscript = parseManuscript(req.body);
+    const result = saveLegacyManuscript(req.userId!, manuscript, { createOnly: true });
+    if (result.conflicts.length) {
+      res.status(409).json({
+        error: 'A manuscript with this id already exists',
+        manuscript: result.manuscript,
+        conflicts: result.conflicts,
+      });
+      return;
+    }
+    if (!result.manuscript) throw new Error('Manuscript was not created');
+    res.status(201).json(result.manuscript);
+  } catch (error) {
+    const typed = error as Error & { status?: number; details?: unknown };
+    res.status(typed.status ?? 400).json({ error: typed.message, details: typed.details });
   }
-  saveManuscript(userId, m);
-  res.status(201).json(m);
 });
 
 router.put('/:id', (req, res) => {
-  const userId = req.userId!;
-  const m: ManuscriptJson = req.body;
-  m.metadata = { ...m.metadata, id: req.params.id };
-  saveManuscript(userId, m);
-  res.json(m);
+  try {
+    const manuscript = parseManuscript(req.body);
+    manuscript.metadata.id = req.params.id;
+    const result = saveLegacyManuscript(req.userId!, manuscript);
+    if (result.conflicts.length) {
+      res.status(409).json({
+        error: 'The manuscript changed on another device',
+        manuscript: result.manuscript,
+        conflicts: result.conflicts,
+      });
+      return;
+    }
+    if (!result.manuscript) throw new Error('Manuscript was not saved');
+    res.json(result.manuscript);
+  } catch (error) {
+    const typed = error as Error & { status?: number; details?: unknown };
+    res.status(typed.status ?? 400).json({ error: typed.message, details: typed.details });
+  }
+});
+
+router.delete('/:manuscriptId/chapters/:chapterId', (req, res) => {
+  const parsed = DeleteChapterBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid chapter delete payload' });
+    return;
+  }
+  const result = deleteChapter(
+    req.userId!,
+    req.params.manuscriptId,
+    req.params.chapterId,
+    parsed.data.baseRevision,
+  );
+  if (!result) {
+    res.status(404).json({ error: 'Chapter not found' });
+    return;
+  }
+  if (result.ok === false) {
+    res.status(409).json({
+      error: 'The chapter changed on another device',
+      currentRevision: result.currentRevision,
+    });
+    return;
+  }
+  res.json({
+    ok: true,
+    revision: result.revision,
+    manuscriptRevision: result.manuscriptRevision,
+  });
 });
 
 router.delete('/:id', (req, res) => {
-  const userId = req.userId!;
-  const id = req.params.id;
-  const now = Date.now();
-  db.prepare(
-    `UPDATE manuscripts SET deleted_at = ?, last_modified = ?
-      WHERE user_id = ? AND id = ?`,
-  ).run(now, now, userId, id);
-  db.prepare(
-    `UPDATE chapters SET deleted_at = ?, last_modified = ?
-      WHERE user_id = ? AND manuscript_id = ? AND deleted_at IS NULL`,
-  ).run(now, now, userId, id);
-
-  if (config.nextcloud.mirrorEnabled) {
-    ncMirror.deleteManuscript(userId, id).catch(() => {});
+  const parsed = DeleteManuscriptBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid manuscript delete payload' });
+    return;
   }
-
+  const result = deleteManuscript(
+    req.userId!,
+    req.params.id,
+    parsed.data.baseRevision,
+  );
+  if (!result) {
+    res.status(404).json({ error: 'Manuscript not found' });
+    return;
+  }
+  if (result.ok === false) {
+    res.status(409).json({
+      error: 'The manuscript changed on another device',
+      currentRevision: result.currentRevision,
+    });
+    return;
+  }
   res.status(204).send();
 });
 

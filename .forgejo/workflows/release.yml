@@ -1,0 +1,118 @@
+name: Publish Core Container
+
+# Required repository secrets:
+#   FORGEJO_REGISTRY_TOKEN  owner-scoped PAT with package write permission
+#   RELEASE_GPG_PUBLIC_KEY  armored public key allowed to sign stable tags
+# The `docker` runner must provide Node 22 setup support, GnuPG, and Docker.
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Test, smoke, and publish tested digest
+    runs-on: docker
+    env:
+      REGISTRY: forgejo.lan
+      IMAGE: forgejo.lan/protoman/chronicle
+      CANDIDATE: chronicle-release-candidate:${{ forgejo.sha }}-${{ forgejo.run_id }}
+      FORMAL_COMPOSE_PROJECT: chronicle-formal-${{ forgejo.run_id }}-${{ forgejo.run_attempt }}
+    steps:
+      - name: Check out Chronicle and tag metadata
+        uses: https://data.forgejo.org/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+
+      - name: Verify stable release tag
+        if: startsWith(forgejo.ref, 'refs/tags/')
+        env:
+          RELEASE_GPG_PUBLIC_KEY: ${{ secrets.RELEASE_GPG_PUBLIC_KEY }}
+        run: |
+          set -eu
+          tag=${FORGEJO_REF#refs/tags/}
+          if ! printf '%s\n' "$tag" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+            echo "Stable release tags must be canonical vMAJOR.MINOR.PATCH." >&2
+            exit 1
+          fi
+          if [ -z "${RELEASE_GPG_PUBLIC_KEY:-}" ]; then
+            echo "RELEASE_GPG_PUBLIC_KEY is required for stable releases." >&2
+            exit 1
+          fi
+          export GNUPGHOME
+          GNUPGHOME=$(mktemp -d)
+          trap 'rm -rf "$GNUPGHOME"' EXIT
+          chmod 700 "$GNUPGHOME"
+          printf '%s' "$RELEASE_GPG_PUBLIC_KEY" | gpg --batch --import
+          test "$(git cat-file -t "refs/tags/$tag")" = tag
+          git verify-tag "$tag"
+          test "$(git rev-parse "refs/tags/$tag^{commit}")" = "$FORGEJO_SHA"
+
+      - name: Use Node.js 22
+        uses: https://data.forgejo.org/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run release gates
+        run: |
+          set -eu
+          npm run lint
+          npm run test:core
+          npm run build
+          npm audit --omit=dev --audit-level=high
+
+      - name: Build candidate once
+        run: docker build --pull --tag "$CANDIDATE" .
+
+      - name: Smoke-test exact candidate
+        run: sh scripts/docker-smoke.sh "$CANDIDATE"
+
+      - name: Formal black-box test exact candidate
+        run: >-
+          COMPOSE_PROJECT_NAME="$FORMAL_COMPOSE_PROJECT"
+          CHRONICLE_IMAGE="$CANDIDATE"
+          npm run test:formal
+
+      - name: Publish tested candidate
+        env:
+          FORGEJO_REGISTRY_TOKEN: ${{ secrets.FORGEJO_REGISTRY_TOKEN }}
+        run: |
+          set -eu
+          if [ -z "${FORGEJO_REGISTRY_TOKEN:-}" ]; then
+            echo "FORGEJO_REGISTRY_TOKEN is required to publish images." >&2
+            exit 1
+          fi
+
+          tags=edge
+          case "$FORGEJO_REF" in
+            refs/tags/*)
+              version=${FORGEJO_REF#refs/tags/v}
+              minor=${version%.*}
+              tags="$version $minor latest"
+              ;;
+          esac
+
+          printf '%s' "$FORGEJO_REGISTRY_TOKEN" | \
+            docker login "$REGISTRY" --username protoman --password-stdin
+          trap 'docker logout "$REGISTRY" >/dev/null 2>&1 || true' EXIT
+
+          image_id=$(docker image inspect --format '{{.Id}}' "$CANDIDATE")
+          echo "Publishing tested image $image_id as: $tags"
+          for tag in $tags; do
+            docker tag "$CANDIDATE" "$IMAGE:$tag"
+            docker push "$IMAGE:$tag"
+          done
+
+      - name: Remove local release images
+        if: always()
+        run: |
+          docker image rm --force "$CANDIDATE" >/dev/null 2>&1 || true

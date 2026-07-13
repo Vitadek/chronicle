@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { Book, Plus, Trash2, Clock, BookOpen, User, X, Settings, Upload, SpellCheck } from 'lucide-react';
 import { ManuscriptMetadata, Manuscript } from '../types';
@@ -75,25 +75,29 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
   // is functionally invisible.
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadLibrary();
-  }, [refreshSignal]);
-
-  const loadLibrary = async () => {
+  const loadSequenceRef = useRef(0);
+  const loadLibrary = useCallback(async () => {
+    const sequence = ++loadSequenceRef.current;
     try {
       const list = await manuscriptService.list();
+      if (sequence !== loadSequenceRef.current) return;
       setManuscripts(list.sort((a, b) => b.lastModified - a.lastModified));
     } catch (error) {
-      console.error(error);
+      if (sequence === loadSequenceRef.current) console.error(error);
     } finally {
-      setLoading(false);
+      if (sequence === loadSequenceRef.current) setLoading(false);
     }
-  };
+  }, []);
 
-  const handleConfirmDelete = async (e: React.MouseEvent, id: string) => {
+  useEffect(() => {
+    void loadLibrary();
+    return () => { loadSequenceRef.current += 1; };
+  }, [loadLibrary, refreshSignal]);
+
+  const handleConfirmDelete = async (e: React.MouseEvent, manuscript: ManuscriptMetadata) => {
     e.stopPropagation();
     try {
-      await manuscriptService.delete(id);
+      await manuscriptService.delete(manuscript.id, manuscript.revision);
       setConfirmDeleteId(null);
       await loadLibrary();
     } catch (error) {
@@ -211,7 +215,7 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
                       {isConfirming ? (
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           <button
-                            onClick={(e) => handleConfirmDelete(e, m.id)}
+                            onClick={(e) => handleConfirmDelete(e, m)}
                             className="px-3 py-1.5 bg-red-500 text-white text-[9px] sm:text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-red-600 transition-colors"
                           >
                             Delete

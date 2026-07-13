@@ -10,13 +10,9 @@ npm-debug.log*
 .DS_Store
 .vscode
 .idea
+tests/formal/artifacts
+tests
 README.md
 Dockerfile
 docker-compose.yml
 .dockerignore
-
-# Mobile build artifacts — not part of the server image, and large
-build-apk
-mobile/build
-mobile/.dart_tool
-mobile/android/.gradle

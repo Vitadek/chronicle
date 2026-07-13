@@ -95,6 +95,8 @@ interface SidebarProps {
   userProfile: UserProfile;
   onUpdateUserProfile: (profile: Partial<UserProfile>) => void;
   currentChapterContent?: string;
+  /** Cached by App so Sidebar does not re-count every chapter on each keystroke. */
+  manuscriptWordCount?: number;
   /** Permanently delete the current manuscript. Parent navigates back to the library. */
   onDeleteManuscript?: () => void;
   /** Navigate back to the Library view (clears current manuscript selection). */
@@ -369,6 +371,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   userProfile,
   onUpdateUserProfile,
   currentChapterContent,
+  manuscriptWordCount,
   onDeleteManuscript,
   onReturnToLibrary,
   exportSettings = DEFAULT_EXPORT_SETTINGS,
@@ -420,9 +423,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Cheap given typical chapter counts, and useMemo means we don't redo it
   // for unrelated re-renders (theme toggles, sidebar opens, etc).
   const manuscriptTotals = useMemo(() => {
-    const words = chapters.reduce((sum, c) => sum + countWords(c.content), 0);
+    const words = manuscriptWordCount ?? chapters.reduce((sum, c) => sum + countWords(c.content), 0);
     return { words, minutes: readingMinutes(words), chapterCount: chapters.length };
-  }, [chapters]);
+  }, [chapters, manuscriptWordCount]);
 
   const handleExportDocx = async () => {
     try {
@@ -1697,5 +1700,3 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </>
   );
 };
-
-

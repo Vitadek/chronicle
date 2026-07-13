@@ -7,10 +7,8 @@ import type {
   PluginFinding,
   PluginServices,
 } from '../api';
-import { loadPluginModule } from './loader';
 import { pluginService, type InstalledPlugin } from '../../services/pluginService';
 import { lintText } from '../../lib/grammar/languagetool';
-import { buildCoreExtensions, EDITOR_KEYBOARD_ATTRS } from '../../lib/editorExtensions';
 import { getAiResponse } from '../../services/aiService';
 import type { AiConfig } from '../../services/aiConfig';
 
@@ -147,6 +145,7 @@ export const PluginHost: React.FC<{ children: React.ReactNode }> = ({ children }
   // into re-rendering themselves.
   const findingsRef = useRef<Record<string, PluginFinding[]>>({});
   const findingsListeners = useRef(new Set<(all: Record<string, PluginFinding[]>) => void>());
+  const editorSupportRef = useRef<typeof import('../../lib/editorExtensions') | null>(null);
 
   const services = useMemo<PluginServices>(() => ({
     findings: {
@@ -170,24 +169,32 @@ export const PluginHost: React.FC<{ children: React.ReactNode }> = ({ children }
       // The safe path: core extensions are merged in for the plugin, so a
       // plugin editor cannot be built on the wrong schema (which would silently
       // eat comments/audio/epigraph attrs on save). See PluginServices.editor.
-      createEditorOptions: ({ content, placeholder, extensions, onUpdate, attributes }) => ({
-        extensions: [
-          ...buildCoreExtensions({ placeholder: placeholder ?? '' }),
-          ...(extensions ?? []),
-        ],
-        content: content ?? '',
-        onUpdate: onUpdate
-          ? ({ editor }: { editor: Editor }) => onUpdate(editor.getHTML())
-          : undefined,
-        editorProps: {
-          attributes: {
-            class: 'novel-editor-content focus:outline-none',
-            ...EDITOR_KEYBOARD_ATTRS,
-            ...(attributes ?? {}),
+      createEditorOptions: ({ content, placeholder, extensions, onUpdate, attributes }) => {
+        const support = editorSupportRef.current;
+        if (!support) throw new Error('Plugin editor services are still loading.');
+        return {
+          extensions: [
+            ...support.buildCoreExtensions({ placeholder: placeholder ?? '' }),
+            ...(extensions ?? []),
+          ],
+          content: content ?? '',
+          onUpdate: onUpdate
+            ? ({ editor }: { editor: Editor }) => onUpdate(editor.getHTML())
+            : undefined,
+          editorProps: {
+            attributes: {
+              class: 'novel-editor-content focus:outline-none',
+              ...support.EDITOR_KEYBOARD_ATTRS,
+              ...(attributes ?? {}),
+            },
           },
-        },
-      }),
-      coreExtensions: (opts) => buildCoreExtensions({ placeholder: opts?.placeholder ?? '' }),
+        };
+      },
+      coreExtensions: (opts) => {
+        const support = editorSupportRef.current;
+        if (!support) throw new Error('Plugin editor services are still loading.');
+        return support.buildCoreExtensions({ placeholder: opts?.placeholder ?? '' });
+      },
     },
     grammar: {
       lint: (text: string) => lintText(text),
@@ -271,12 +278,21 @@ export const PluginHost: React.FC<{ children: React.ReactNode }> = ({ children }
 
       // Bundles are independent of each other, so fetch them all at once…
       const modules = new Map<string, ChroniclePlugin>();
+      let loader: typeof import('./loader') | null = null;
+      if (activationOrder.length > 0) {
+        const [loaderModule, editorSupport] = await Promise.all([
+          import('./loader'),
+          import('../../lib/editorExtensions'),
+        ]);
+        loader = loaderModule;
+        editorSupportRef.current = editorSupport;
+      }
       await Promise.all(
         activationOrder.map(async (id) => {
           try {
             // Lazy by design: a disabled plugin's bundle is never fetched (v1
             // eagerly imported every installed plugin regardless of its toggle).
-            modules.set(id, await loadPluginModule(id));
+            modules.set(id, await loader!.loadPluginModule(id));
           } catch (err) {
             nextErrors[id] = err instanceof Error ? err.message : String(err);
           }

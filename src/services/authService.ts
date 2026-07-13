@@ -12,6 +12,12 @@
  */
 
 const TOKEN_KEY = 'chronicle_token';
+const USER_ID_KEY = 'chronicle_user_id';
+
+export interface AuthUser {
+  id: string;
+  [key: string]: unknown;
+}
 
 export interface AuthConfig {
   mode: 'none' | 'token' | 'forward' | 'oidc';
@@ -28,12 +34,25 @@ export const authService = {
     return localStorage.getItem(TOKEN_KEY);
   },
 
+  get userId(): string | null {
+    return sessionStorage.getItem(USER_ID_KEY);
+  },
+
+  setUserId(id: string): void {
+    sessionStorage.setItem(USER_ID_KEY, id);
+  },
+
+  clearUserId(): void {
+    sessionStorage.removeItem(USER_ID_KEY);
+  },
+
   setToken(t: string): void {
     localStorage.setItem(TOKEN_KEY, t);
   },
 
   clear(): void {
     localStorage.removeItem(TOKEN_KEY);
+    this.clearUserId();
   },
 
   /** Read public auth config from the server. Safe to call without a token. */
@@ -57,10 +76,13 @@ export const authService = {
     window.location.href = '/api/auth/nextcloud/start';
   },
 
-  async me(): Promise<unknown | null> {
+  async me(): Promise<AuthUser | null> {
     const res = await authFetch('/api/auth/me');
     if (!res.ok) return null;
-    return res.json();
+    const user = await res.json() as unknown;
+    return user && typeof user === 'object' && typeof (user as { id?: unknown }).id === 'string'
+      ? user as AuthUser
+      : null;
   },
 
   async logout(): Promise<void> {

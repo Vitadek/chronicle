@@ -1,0 +1,67 @@
+name: Core CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Typecheck, regression guards, build, and audit
+    # This runner must not expose a Docker socket or other host credentials;
+    # pull-request code executes here.
+    runs-on: node
+    steps:
+      - name: Check out Chronicle
+        uses: https://data.forgejo.org/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Use Node.js 22
+        uses: https://data.forgejo.org/actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run lint
+
+      - name: Run the complete core regression suite
+        run: npm run test:core
+
+      - name: Production build
+        run: npm run build
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+  container:
+    name: Build and smoke-test OCI image
+    # Docker socket access is deliberately limited to trusted push events.
+    # The runner carrying this label must expose the Docker CLI and daemon.
+    if: forgejo.event_name == 'push'
+    needs: quality
+    runs-on: docker
+    steps:
+      - name: Check out Chronicle
+        uses: https://data.forgejo.org/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Build candidate image
+        env:
+          IMAGE: forgejo.lan/protoman/chronicle:ci-${{ forgejo.sha }}
+        run: docker build --pull --tag "$IMAGE" .
+
+      - name: Smoke-test candidate image
+        env:
+          IMAGE: forgejo.lan/protoman/chronicle:ci-${{ forgejo.sha }}
+        run: sh scripts/docker-smoke.sh "$IMAGE"
+
+      - name: Remove candidate image
+        if: always()
+        env:
+          IMAGE: forgejo.lan/protoman/chronicle:ci-${{ forgejo.sha }}
+        run: docker image rm --force "$IMAGE" >/dev/null 2>&1 || true

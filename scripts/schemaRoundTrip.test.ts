@@ -19,12 +19,26 @@
  * Run: npx tsx scripts/schemaRoundTrip.test.ts
  */
 import { JSDOM } from 'jsdom';
+import { register } from 'node:module';
+
+// The real editor schema includes CommentMark, whose browser presentation
+// imports Tippy styles. Node has no CSS module format; ignore stylesheet side
+// effects while loading the real extensions under this schema-only test.
+// `module.register` is available across Node 22, unlike the newer synchronous
+// hook API, so the guard does not depend on a late Node 22 point release.
+register('./ignoreCss.loader.mjs', import.meta.url);
 
 // TipTap's schema/parse machinery needs a DOM before the extensions load.
 const dom = new JSDOM('<!doctype html><html><body></body></html>');
 (globalThis as any).window = dom.window;
 (globalThis as any).document = dom.window.document;
-(globalThis as any).navigator = dom.window.navigator;
+// Node 22 exposes a built-in, getter-only `navigator`. Direct assignment now
+// throws in ESM strict mode, so install jsdom's implementation by redefining
+// the configurable global instead.
+Object.defineProperty(globalThis, 'navigator', {
+  value: dom.window.navigator,
+  configurable: true,
+});
 (globalThis as any).DOMParser = dom.window.DOMParser;
 (globalThis as any).Node = dom.window.Node;
 (globalThis as any).HTMLElement = dom.window.HTMLElement;

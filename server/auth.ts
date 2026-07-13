@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import type { IncomingMessage } from 'http';
 import crypto from 'crypto';
 import { db, LOCAL_USER_ID } from './db';
 import { config } from './config';
@@ -84,43 +85,15 @@ function sessionAuth(req: Request, res: Response, next: NextFunction): void {
 // ============================================================================
 
 function forwardAuth(req: Request, res: Response, next: NextFunction): void {
-  // 1. Verify the request actually came from a trusted proxy. We check the
-  //    immediate TCP peer — NOT X-Forwarded-For, which is exactly what's
-  //    being decided whether to trust.
-  const peer = req.socket.remoteAddress;
-  if (!matchesTrustedProxy(peer, trustedProxyCidrs)) {
-    console.warn(`[auth/forward] rejected untrusted peer ${peer}`);
-    res.status(403).json({ error: 'Untrusted proxy' });
-    return;
-  }
-
-  // 2. Optional extra defense: shared secret header.
-  if (config.auth.forward.sharedSecret) {
-    const got = req.header(config.auth.forward.sharedSecretHeader || 'X-Forward-Auth-Secret') || '';
-    if (!timingSafeEq(got, config.auth.forward.sharedSecret)) {
-      res.status(403).json({ error: 'Missing or bad shared secret' });
-      return;
+  const identity = resolveForwardUser(req);
+  if (identity.ok === false) {
+    if (identity.error === 'Untrusted proxy') {
+      console.warn(`[auth/forward] rejected untrusted peer ${req.socket.remoteAddress}`);
     }
-  }
-
-  // 3. Pull identity from the configured headers.
-  const username = req.header(config.auth.forward.headerUser);
-  if (!username) {
-    res.status(401).json({ error: 'No identity header from proxy' });
+    res.status(identity.status).json({ error: identity.error });
     return;
   }
-  const email = req.header(config.auth.forward.headerEmail) || null;
-  const displayName = req.header(config.auth.forward.headerName) || username;
-
-  const userId = upsertExternalUser({
-    provider: 'forward',
-    issuer: 'proxy',
-    externalId: username,
-    email,
-    displayName,
-  });
-
-  req.userId = userId;
+  req.userId = identity.userId;
   req.authVia = 'forward';
   next();
 }
@@ -140,6 +113,53 @@ function timingSafeEq(a: string, b: string): boolean {
   const bb = Buffer.from(b);
   if (ab.length !== bb.length) return false;
   return crypto.timingSafeEqual(ab, bb);
+}
+
+function incomingHeader(req: Pick<IncomingMessage, 'headers'>, name: string): string | null {
+  const value = req.headers[name.toLowerCase()];
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+export type ForwardUserResult =
+  | { ok: true; userId: string }
+  | { ok: false; status: 401 | 403; error: string };
+
+/**
+ * Resolve the same trusted forward-auth identity for HTTP and WebSocket
+ * handshakes. Keeping one implementation prevents the collaboration endpoint
+ * from accepting headers the REST API would reject.
+ */
+export function resolveForwardUser(
+  req: Pick<IncomingMessage, 'headers' | 'socket'>,
+): ForwardUserResult {
+  // Verify the immediate TCP peer, never the user-controlled forwarded chain.
+  if (!matchesTrustedProxy(req.socket.remoteAddress, trustedProxyCidrs)) {
+    return { ok: false, status: 403, error: 'Untrusted proxy' };
+  }
+
+  if (config.auth.forward.sharedSecret) {
+    const header = config.auth.forward.sharedSecretHeader || 'X-Forward-Auth-Secret';
+    const got = incomingHeader(req, header) || '';
+    if (!timingSafeEq(got, config.auth.forward.sharedSecret)) {
+      return { ok: false, status: 403, error: 'Missing or bad shared secret' };
+    }
+  }
+
+  const username = incomingHeader(req, config.auth.forward.headerUser);
+  if (!username) return { ok: false, status: 401, error: 'No identity header from proxy' };
+  const email = incomingHeader(req, config.auth.forward.headerEmail);
+  const displayName = incomingHeader(req, config.auth.forward.headerName) || username;
+  return {
+    ok: true,
+    userId: upsertExternalUser({
+      provider: 'forward',
+      issuer: 'proxy',
+      externalId: username,
+      email,
+      displayName,
+    }),
+  };
 }
 
 /** Mint a new opaque session token, optionally with Nextcloud OAuth tokens. */

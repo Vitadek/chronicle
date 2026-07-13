@@ -5,7 +5,7 @@ import * as Y from 'yjs';
 import { buildCoreExtensions, EDITOR_KEYBOARD_ATTRS } from '../lib/editorExtensions';
 
 interface CollabEditorProps {
-  /** Unique server document name, e.g. `${manuscriptId}:${chapterId}`. */
+  /** User-scoped server document name: `<encoded-user>/<manuscript>:<chapter>`. */
   docName: string;
   /** WebSocket base for the collab endpoint, e.g. wss://host/collab */
   collabUrl: string;
@@ -20,9 +20,8 @@ interface CollabEditorProps {
  * prop), so two clients on the same docName edit live. Reuses the shared core
  * extensions, so it keeps the app's typography + keyboard behavior.
  *
- * A fresh chapter Y.Doc starts EMPTY — seeding existing chapter HTML into the
- * Y.Doc is the migration phase (task 9). This component proves the live-sync
- * path end to end.
+ * A fresh chapter Y.Doc is seeded from the authoritative chapter HTML by the
+ * server before live updates begin.
  */
 export const CollabEditor: React.FC<CollabEditorProps> = ({
   docName,
