@@ -184,7 +184,12 @@ export class CompletionEngine {
           ? TIER_BIGRAM + bigramCount * 1000 + Math.min(count, 999)
           : count >= 2
             ? TIER_DOC_REPEATED + count
-            : TIER_DICT_MAX - SINGLETON_EQUIV_RANK;
+            : // A singleton that is ALSO a common dictionary word keeps its
+              // dictionary standing — one appearance shouldn't demote "there".
+              Math.max(
+                TIER_DICT_MAX - SINGLETON_EQUIV_RANK,
+                TIER_DICT_MAX - (this.dictRank.get(lower) ?? Number.MAX_SAFE_INTEGER),
+              );
       consider(lower, score, 'document');
     }
 

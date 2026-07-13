@@ -134,9 +134,12 @@
   text-indent: 0;
 }
 
+/* The ghost completion: a dimmed continuation of the writer's own text, so it
+   must inherit the manuscript font exactly — no italics, no color shift. */
 .autocomplete-suggestion {
-  @apply opacity-30 italic pointer-events-none;
+  @apply opacity-30 pointer-events-none select-none;
   color: currentColor;
+  white-space: pre;
 }
 /* Checker squiggles (.tense-shift / .grammar-lint) live in styles/checkers.css,
    imported from src/main.tsx so they're shared with the mobile editor bundle. */

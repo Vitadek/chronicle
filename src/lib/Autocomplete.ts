@@ -46,7 +46,8 @@ declare module '@tiptap/core' {
   }
 }
 
-const autocompleteKey = new PluginKey<AutocompleteState>('autocomplete');
+/** Exported for scripts/autocompleteGhost.test.ts; not part of the app API. */
+export const autocompleteKey = new PluginKey<AutocompleteState>('autocomplete');
 
 // The word being typed (letters with in-word apostrophes), and the word
 // before it, from the text preceding the caret.
