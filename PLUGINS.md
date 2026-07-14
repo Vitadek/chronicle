@@ -26,18 +26,41 @@ Nothing is downloaded or built by hand.
 
 Each lives in its own repo. Paste any of these URLs:
 
-| Plugin | Repo URL | What it does |
-|---|---|---|
-| **Proofreader** | `https://github.com/Vitadek/chronicle-plugin-proofreader.git` | Guided revision pass: spelling, grammar, observation-only AI clarity check |
-| **Outliner** | `https://github.com/Vitadek/chronicle-plugin-outliner.git` | Synopsis, navigation, plot canvas, character sheets, notes — with a pop-out window |
-| **Grammar Check** | `https://github.com/Vitadek/chronicle-plugin-grammar-check.git` | Live LanguageTool squiggles + a custom dictionary |
-| **Tense Check** | `https://github.com/Vitadek/chronicle-plugin-tense-check.git` | Flags sentences drifting from a paragraph's narrative tense |
-| **Autocorrect** | `https://github.com/Vitadek/chronicle-plugin-autocorrect.git` | Deterministic fixes + sentence capitalization as you type |
-| **Issues Panel** | `https://github.com/Vitadek/chronicle-plugin-issues-panel.git` | One list of every checker finding, plus an on-demand AI grammar pass |
-| **Smart Thesaurus** | `https://github.com/Vitadek/chronicle-plugin-thesaurus.git` | Selection synonyms — offline first, optional AI lookup |
+| Plugin | Repo URL | What it does | Needs |
+|---|---|---|---|
+| **Proofreader** | `https://github.com/Vitadek/chronicle-plugin-proofreader.git` | Guided revision pass: spelling, grammar, observation-only AI clarity check | **LanguageTool** · Gemini for the clarity pass |
+| **Outliner** | `https://github.com/Vitadek/chronicle-plugin-outliner.git` | Synopsis, navigation, plot canvas, character sheets, notes — with a pop-out window | — |
+| **Grammar Check** | `https://github.com/Vitadek/chronicle-plugin-grammar-check.git` | Live LanguageTool squiggles + a custom dictionary | **LanguageTool** |
+| **Tense Check** | `https://github.com/Vitadek/chronicle-plugin-tense-check.git` | Flags sentences drifting from a paragraph's narrative tense | — |
+| **Autocorrect** | `https://github.com/Vitadek/chronicle-plugin-autocorrect.git` | Deterministic fixes + sentence capitalization as you type | — |
+| **Issues Panel** | `https://github.com/Vitadek/chronicle-plugin-issues-panel.git` | One list of every checker finding, plus an on-demand AI grammar pass | Gemini for the AI pass |
+| **Smart Thesaurus** | `https://github.com/Vitadek/chronicle-plugin-thesaurus.git` | Selection synonyms — offline first, optional AI lookup | AI for the online lookup |
 
-You don't have to prepare anything before enabling these. Chronicle reads what
-each one needs and enforces it (see [below](#dependencies-and-capabilities)):
+**Bold** = a hard requirement: the plugin installs and builds, but **refuses to
+enable** until it's there, and Settings tells you exactly what's missing and how
+to fix it. Everything else is soft — the plugin enables and runs, marked
+*Limited*, with that one feature absent.
+
+### Getting LanguageTool
+
+It's a sidecar container, and it's already in `docker-compose.yml` — if you run
+the stack as shipped, you have it and there is nothing to do:
+
+```yaml
+languagetool:
+  image: erikvl87/languagetool:latest
+  environment: [Java_Xms=256m, Java_Xmx=768m]
+```
+
+Chronicle reaches it at `LANGUAGETOOL_URL` (default `http://languagetool:8010`)
+and **probes it at runtime** — the capability is reported only when the sidecar
+actually answers, so a misconfigured URL or a container that hasn't finished
+booting reads as "not available", not as "no issues found". If you host it
+elsewhere, point `LANGUAGETOOL_URL` at it. It is never exposed to the browser;
+Chronicle proxies it at `/api/grammar/check`.
+
+Chronicle reads what each plugin needs and enforces it
+(see [below](#dependencies-and-capabilities)):
 
 - Grammar Check, Tense Check and Autocorrect **replace** their built-in
   equivalents, so the built-in stands down by itself — no doubled squiggles.

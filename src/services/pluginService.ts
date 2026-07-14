@@ -40,6 +40,25 @@ export interface InstalledPlugin {
   dependencies: Record<string, string>;
   /** The server's verdict. The client renders this; it never re-derives it. */
   status: PluginStatus;
+  /**
+   * WHY each unmet requirement is unmet, and what to do — "LanguageTool is not
+   * reachable at http://languagetool:8010. Start the sidecar (see
+   * docker-compose.yml) or set LANGUAGETOOL_URL." Parallel to `status.missing` /
+   * `status.unmetWants`. Composed server-side so there is one wording, not two.
+   */
+  missingReasons: string[];
+  unmetWantsReasons: string[];
+}
+
+/** POST /api/plugins/install: the plugin, plus whether it can actually run. */
+export interface InstallResult {
+  plugin: InstalledPlugin;
+  /** Hard requirements the host can't satisfy — it installed, but won't enable. */
+  missing: string[];
+  missingReasons: string[];
+  /** Soft requirements — it will enable, but limited. */
+  unmetWants: string[];
+  unmetWantsReasons: string[];
 }
 
 /** Everything GET /api/plugins returns: the list, plus its resolution. */
@@ -74,15 +93,21 @@ export const pluginService = {
     return json<PluginState>(res, 'Listing plugins');
   },
 
-  /** Install from a git URL, or from a local folder path (dev escape hatch). */
-  async install(source: { url?: string; path?: string }): Promise<InstalledPlugin> {
+  /**
+   * Install from a git URL, or from a local folder path (dev escape hatch).
+   *
+   * Returns the plugin AND whether the host can actually run it: a plugin can
+   * install and build perfectly and still refuse to enable (the Proofreader
+   * without the LanguageTool sidecar). Settings surfaces that immediately
+   * rather than leaving the user to work it out from a dead toggle.
+   */
+  async install(source: { url?: string; path?: string }): Promise<InstallResult> {
     const res = await authFetch('/api/plugins/install', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(source),
     });
-    const data = await json<{ plugin: InstalledPlugin }>(res, 'Install');
-    return data.plugin;
+    return json<InstallResult>(res, 'Install');
   },
 
   /** Fetch from the remote and report what would be pulled. */

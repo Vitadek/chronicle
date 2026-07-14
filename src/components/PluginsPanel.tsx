@@ -52,6 +52,9 @@ export const PluginsPanel: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) 
   const [gitUrl, setGitUrl] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [installError, setInstallError] = useState<string | null>(null);
+  /** "Installed — but it can't run yet, and here's why." Not an error: the
+   *  install worked. Cleared on the next install attempt. */
+  const [installNotice, setInstallNotice] = useState<{ name: string; reasons: string[]; blocking: boolean } | null>(null);
   const [updates, setUpdates] = useState<Record<string, PluginCommit[]>>({});
 
   const install = async () => {
@@ -59,10 +62,20 @@ export const PluginsPanel: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) 
     if (!url) return;
     setBusy('install');
     setInstallError(null);
+    setInstallNotice(null);
     try {
-      await pluginService.install({ url });
+      const result = await pluginService.install({ url });
       setGitUrl('');
       await refresh();
+      // A plugin can clone, compile and install perfectly and STILL be unable
+      // to run — the Proofreader needs the LanguageTool sidecar answering. Say
+      // that here, at the moment of the action, instead of leaving the user to
+      // deduce it from a toggle that quietly won't move.
+      if (result.missingReasons.length > 0) {
+        setInstallNotice({ name: result.plugin.name, reasons: result.missingReasons, blocking: true });
+      } else if (result.unmetWantsReasons.length > 0) {
+        setInstallNotice({ name: result.plugin.name, reasons: result.unmetWantsReasons, blocking: false });
+      }
     } catch (err) {
       setInstallError(err instanceof Error ? err.message : 'Install failed');
     } finally {
@@ -195,6 +208,37 @@ export const PluginsPanel: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) 
             {installError}
           </p>
         )}
+
+        {/* Installed, but it can't run (or can't run fully) on this instance. */}
+        {installNotice && (
+          <div
+            className={cn(
+              'flex items-start gap-2 px-3 py-2.5 rounded-xl border',
+              installNotice.blocking
+                ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400'
+                : 'bg-black/[0.04] dark:bg-white/[0.06] border-transparent opacity-70',
+            )}
+          >
+            <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+            <div className="min-w-0 space-y-1">
+              <p className="text-[10px] font-bold">
+                {installNotice.name} installed —{' '}
+                {installNotice.blocking
+                  ? 'but it can’t be enabled on this instance yet.'
+                  : 'with some features unavailable.'}
+              </p>
+              {installNotice.reasons.map((reason) => (
+                <p key={reason} className="text-[10px] leading-relaxed">{reason}</p>
+              ))}
+            </div>
+            <button
+              onClick={() => setInstallNotice(null)}
+              className="ml-auto shrink-0 text-[9px] uppercase font-black tracking-widest opacity-50 hover:opacity-100 transition-opacity"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Installed */}
@@ -263,17 +307,29 @@ export const PluginsPanel: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) 
                       refuses to enable it, so say why rather than letting the
                       user click a button that 409s. */}
                   {blocked.length > 0 && (
-                    <p className="flex items-start gap-1.5 mt-2 text-[10px] text-amber-500 leading-relaxed">
+                    <div className="flex items-start gap-1.5 mt-2 text-[10px] text-amber-500 leading-relaxed">
                       <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
-                      <span>Needs {blocked.map(capabilityName).join(', ')}.</span>
-                    </p>
+                      <div className="space-y-0.5">
+                        <p>Needs {blocked.map(capabilityName).join(', ')}.</p>
+                        {/* HOW to satisfy it — which URL was probed, which env
+                            var to set. The Enable button is (rightly) disabled
+                            here, so this is the only place the user can learn
+                            what to actually do about it. */}
+                        {(p.missingReasons ?? []).map((reason) => (
+                          <p key={reason} className="opacity-80">{reason}</p>
+                        ))}
+                      </div>
+                    </div>
                   )}
 
                   {/* Unmet SOFT requirements: it runs, just not at full strength. */}
                   {p.status.unmetWants.length > 0 && blocked.length === 0 && (
-                    <p className="text-[10px] opacity-40 mt-2 leading-relaxed">
-                      Limited — no {p.status.unmetWants.map(capabilityName).join(' or ')}.
-                    </p>
+                    <div className="text-[10px] opacity-40 mt-2 leading-relaxed space-y-0.5">
+                      <p>Limited — no {p.status.unmetWants.map(capabilityName).join(' or ')}.</p>
+                      {(p.unmetWantsReasons ?? []).map((reason) => (
+                        <p key={reason}>{reason}</p>
+                      ))}
+                    </div>
                   )}
 
                   {p.status.conflictsWith.length > 0 && (

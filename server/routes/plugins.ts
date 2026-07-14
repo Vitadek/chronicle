@@ -127,11 +127,14 @@ async function stateForUser(userId: string) {
   return { plugins, hostCaps, resolution };
 }
 
+/** Turn one unmet capability into something a human can act on. */
+const explainOne = (cap: string): string =>
+  cap.startsWith('host:')
+    ? explainMissingHostCapability(cap)
+    : `Requires "${cap}", which no enabled plugin provides.`;
+
 /** Turn unmet capabilities into something a human can act on. */
-const explain = (caps: string[]): string =>
-  caps
-    .map((cap) => (cap.startsWith('host:') ? explainMissingHostCapability(cap) : `Requires "${cap}", which no enabled plugin provides.`))
-    .join(' ');
+const explain = (caps: string[]): string => caps.map(explainOne).join(' ');
 
 const idParam = (req: { params: { id: string } }): string => {
   if (!PLUGIN_ID_RE.test(req.params.id)) throw new Error('Invalid plugin id');
@@ -147,6 +150,14 @@ router.get('/', async (req, res) => {
       plugins: plugins.map((p) => ({
         ...p,
         status: resolution.status[p.id],
+        // WHY a requirement is unmet, and what to do about it — the same text
+        // the enable 409 carries. Settings disables the Enable button on a
+        // blocked plugin, so without this the actionable half of the message
+        // ("LanguageTool is not reachable at …; start the sidecar") was
+        // unreachable: the only way to see it was to click a button the UI
+        // (correctly) wouldn't let you click.
+        missingReasons: resolution.status[p.id].missing.map(explainOne),
+        unmetWantsReasons: resolution.status[p.id].unmetWants.map(explainOne),
         // A cycle is a build-class failure: the plugin is installed and enabled
         // but cannot be activated, and the user has to edit a manifest to fix it.
         buildError: p.buildError ?? resolution.cycles[p.id] ?? null,
@@ -224,7 +235,22 @@ router.post('/install', async (req, res) => {
     }
 
     const disk = await describePlugin(manifest.id);
-    res.json({ plugin: { ...disk, enabled: false, state: '{}' } });
+
+    // Installing is not the same as being able to RUN. A plugin whose hard
+    // requirements aren't met (Proofreader without the LanguageTool sidecar)
+    // installs and builds perfectly, then refuses to enable — so say so here,
+    // at the moment the user acts, instead of leaving them to infer it from a
+    // greyed-out toggle. The reasons are the actionable ones (which URL was
+    // probed, which env var to set).
+    const { plugins, hostCaps } = await stateForUser(req.userId!);
+    const status = resolve(plugins as ResolveInput[], hostCaps).status[manifest.id];
+    res.json({
+      plugin: { ...disk, enabled: false, state: '{}' },
+      missing: status?.missing ?? [],
+      missingReasons: (status?.missing ?? []).map(explainOne),
+      unmetWants: status?.unmetWants ?? [],
+      unmetWantsReasons: (status?.unmetWants ?? []).map(explainOne),
+    });
   } catch (err) {
     fs.rmSync(staging, { recursive: true, force: true });
     res.status(400).json({ error: err instanceof Error ? err.message : 'Install failed' });

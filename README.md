@@ -304,24 +304,33 @@ don't, and keep the app light. A plugin is just a git repo — paste its URL int
 **Settings → Plugins → Install from git** and Chronicle clones and compiles it
 server-side. Nothing to build or download by hand.
 
-| Plugin | Install URL |
-|---|---|
-| **Proofreader** — guided spelling/grammar/AI-clarity pass | `https://github.com/Vitadek/chronicle-plugin-proofreader.git` |
-| **Outliner** — plot canvas, character sheets, synopsis, pop-out window | `https://github.com/Vitadek/chronicle-plugin-outliner.git` |
-| **Grammar Check** — LanguageTool squiggles + custom dictionary | `https://github.com/Vitadek/chronicle-plugin-grammar-check.git` |
-| **Tense Check** — flags narrative tense drift | `https://github.com/Vitadek/chronicle-plugin-tense-check.git` |
-| **Autocorrect** — deterministic fixes as you type | `https://github.com/Vitadek/chronicle-plugin-autocorrect.git` |
-| **Issues Panel** — every checker finding in one list | `https://github.com/Vitadek/chronicle-plugin-issues-panel.git` |
-| **Smart Thesaurus** — selection synonyms, offline-first | `https://github.com/Vitadek/chronicle-plugin-thesaurus.git` |
+| Plugin | Install URL | Needs |
+|---|---|---|
+| **Proofreader** — guided spelling/grammar/AI-clarity pass | `https://github.com/Vitadek/chronicle-plugin-proofreader.git` | **LanguageTool** |
+| **Outliner** — plot canvas, character sheets, synopsis, pop-out window | `https://github.com/Vitadek/chronicle-plugin-outliner.git` | — |
+| **Grammar Check** — LanguageTool squiggles + custom dictionary | `https://github.com/Vitadek/chronicle-plugin-grammar-check.git` | **LanguageTool** |
+| **Tense Check** — flags narrative tense drift | `https://github.com/Vitadek/chronicle-plugin-tense-check.git` | — |
+| **Autocorrect** — deterministic fixes as you type | `https://github.com/Vitadek/chronicle-plugin-autocorrect.git` | — |
+| **Issues Panel** — every checker finding in one list | `https://github.com/Vitadek/chronicle-plugin-issues-panel.git` | — |
+| **Smart Thesaurus** — selection synonyms, offline-first | `https://github.com/Vitadek/chronicle-plugin-thesaurus.git` | — |
 
-Plugins **declare what they need**, and Chronicle enforces it — so there's nothing
-to set up first:
+**LanguageTool** is the grammar/spelling engine, and it ships as a sidecar in
+`docker-compose.yml` — run the stack as given and it's already there. Chronicle
+probes it at runtime, so it counts as available only when it actually answers.
+(AI features — the Proofreader's clarity pass, the Issues Panel's AI grammar
+pass, the Thesaurus' online lookup — need a provider key; without one the plugin
+still runs, marked *Limited*, minus that feature.)
+
+Plugins **declare what they need**, and Chronicle enforces it — so nothing fails
+quietly:
 
 - Grammar Check, Tense Check and Autocorrect **replace** the built-in versions.
   The built-in stands down on its own (no doubled squiggles) and comes back the
   moment you disable the plugin.
-- A plugin needing the LanguageTool sidecar won't enable while it's down — it
-  tells you, instead of silently flagging nothing.
+- A plugin needing the LanguageTool sidecar **won't enable** while it's down.
+  Settings names what's missing *and how to fix it* — which URL was probed, which
+  variable to set — at install time and on the plugin's card, instead of silently
+  flagging nothing.
 - The Issues Panel says *"Limited — no checker"* rather than showing a blank list.
 
 Updates are explicit: **Check for updates** shows you the incoming commits before

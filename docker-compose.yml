@@ -22,5 +22,26 @@ services:
       # AI settings (Sourced from .env)
       - GEMINI_API_KEY=${GEMINI_API_KEY}
 
+      # The grammar engine (sidecar below). Chronicle PROBES this at runtime and
+      # reports `host:languagetool` only when it answers — so without the
+      # service, the built-in grammar check quietly finds nothing and the
+      # Grammar Check / Tense Check / Proofreader plugins refuse to enable,
+      # saying why. Keep the two together.
+      - LANGUAGETOOL_URL=http://languagetool:8010
+    depends_on:
+      - languagetool
+
+  # LanguageTool: the grammar/spelling engine (the one LibreOffice uses).
+  # Internal only — Chronicle proxies it at /api/grammar/check and never exposes
+  # it to the browser. ~700MB of JVM; drop this service (and the two lines
+  # above) if you don't want spelling/grammar checking at all.
+  languagetool:
+    image: erikvl87/languagetool:latest
+    container_name: chronicle-languagetool
+    restart: unless-stopped
+    environment:
+      - Java_Xms=256m
+      - Java_Xmx=768m
+
 volumes:
   chronicle-data:
