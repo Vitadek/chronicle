@@ -40,10 +40,11 @@ COPY --chown=node:node --from=builder /app/node_modules   ./node_modules
 COPY --chown=node:node --from=builder /app/package.json   ./package.json
 COPY --chown=node:node --from=builder /app/scripts/storage-launcher.cjs ./scripts/storage-launcher.cjs
 
-# Bundled plugin sources. On first boot the server copies any not-yet-installed
-# one into /data/plugins and compiles it (esbuild ships as a runtime dep for
-# exactly this), so a fresh or air-gapped install is fully featured with no
-# network. They remain git-updatable afterwards.
+# Bundled plugin sources. EMPTY in the official image — a base deployment ships
+# no plugins; they're installed from git in the UI. Kept as a hook for building
+# a customised (or air-gapped) image: drop a plugin's source in plugins-seed/
+# and the server copies it into /data/plugins and compiles it on first boot
+# (esbuild ships as a runtime dep for exactly this). See plugins-seed/README.md.
 COPY --chown=node:node --from=builder /app/plugins-seed   ./plugins-seed
 
 # Persist user data outside the image.

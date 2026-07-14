@@ -6,11 +6,15 @@ import { buildPlugin, readManifest } from './pluginBuild';
 /**
  * First-boot seeding.
  *
- * Official plugins live in their own git repos, but the image also carries a
- * vendored copy of their source in `plugins-seed/`. On boot, any seed plugin
- * not yet present in DATA_DIR/plugins is copied in and compiled — so a fresh
- * (or air-gapped) install is fully featured with no network, while still being
- * git-updatable afterwards.
+ * Any plugin whose source sits in `plugins-seed/` is copied into
+ * DATA_DIR/plugins on boot and compiled, so an image can ship with plugins
+ * already installed — no network, no git clone — while staying git-updatable
+ * afterwards.
+ *
+ * The stock image seeds NOTHING: `plugins-seed/` is empty, every official
+ * plugin lives in its own repo and is installed from the UI. This exists for
+ * operators building a customised image (and for air-gapped installs), which
+ * is why it survives even with no seeds to copy. See plugins-seed/README.md.
  *
  * Seeding never overwrites an existing install: once a plugin is on disk, the
  * user (and their git updates) own it.

@@ -313,6 +313,7 @@ server-side. Nothing to build or download by hand.
 | **Autocorrect** — deterministic fixes as you type | `https://github.com/Vitadek/chronicle-plugin-autocorrect.git` | — |
 | **Issues Panel** — every checker finding in one list | `https://github.com/Vitadek/chronicle-plugin-issues-panel.git` | — |
 | **Smart Thesaurus** — selection synonyms, offline-first | `https://github.com/Vitadek/chronicle-plugin-thesaurus.git` | — |
+| **Chibi Assistant** — pixel-art companion that reacts to your writing | `https://github.com/Vitadek/chronicle-plugin-chibi.git` | — |
 
 **LanguageTool** is the grammar/spelling engine, and it ships as a sidecar in
 `docker-compose.yml` — run the stack as given and it's already there. Chronicle

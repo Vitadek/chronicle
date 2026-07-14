@@ -1,8 +1,0 @@
-{
-  "id": "chronicle.chibi",
-  "name": "Chibi Assistant",
-  "description": "Pixel-art workspace companion. Reacts to your writing, and reads a passage back to you on request.",
-  "version": "2.0.0",
-  "entry": "src/index.tsx",
-  "minAppVersion": "0.1.0"
-}

@@ -4,8 +4,9 @@ A plugin is a **git repo**. You paste its URL into Settings → Plugins; Chronic
 clones it, compiles it on the server, and loads it. Plugin authors write plain
 TypeScript — **no build tooling, no bundler, no `npm install`** on their side.
 
-Every feature is a first-class plugin using the same API: the bundled Chibi
-companion, the official plugins below, and anything you write.
+Every feature is a first-class plugin using the same API — the official plugins
+below and anything you write. The base image ships **none** of them; a fresh
+deployment is the editor, and you add what you want.
 
 - [Installing a plugin](#installing-a-plugin) · [The official plugins](#the-official-plugins)
 - [Dependencies and capabilities](#dependencies-and-capabilities)
@@ -35,6 +36,7 @@ Each lives in its own repo. Paste any of these URLs:
 | **Autocorrect** | `https://github.com/Vitadek/chronicle-plugin-autocorrect.git` | Deterministic fixes + sentence capitalization as you type | — |
 | **Issues Panel** | `https://github.com/Vitadek/chronicle-plugin-issues-panel.git` | One list of every checker finding, plus an on-demand AI grammar pass | Gemini for the AI pass |
 | **Smart Thesaurus** | `https://github.com/Vitadek/chronicle-plugin-thesaurus.git` | Selection synonyms — offline first, optional AI lookup | AI for the online lookup |
+| **Chibi Assistant** | `https://github.com/Vitadek/chronicle-plugin-chibi.git` | Pixel-art companion that reacts to your writing and reads a passage back to you | AI for the feedback line |
 
 **Bold** = a hard requirement: the plugin installs and builds, but **refuses to
 enable** until it's there, and Settings tells you exactly what's missing and how
@@ -354,11 +356,57 @@ would rot silently the day core gains one.
 (Guarded by `scripts/schemaRoundTrip.test.ts`, which asserts the core schema is
 lossless *and* that a bare-StarterKit schema really does destroy those marks.)
 
-## Styling
+## Styling — ⚠️ only classes the app already uses exist
 
-Chronicle uses Tailwind. Utility classes in your JSX work, because the app's
-stylesheet is already loaded. For anything custom, ship a `<style>` block (Chibi
-does this for its sprite animations).
+Chronicle uses Tailwind, and the app's stylesheet is loaded, so utility classes
+in your JSX do work — **but only the ones Chronicle itself uses somewhere.**
+
+Tailwind generates CSS by scanning *its own* source at build time. It never sees
+your plugin: your repo is compiled separately, by esbuild, long after the
+stylesheet was built. So a class the app happens not to use — `w-9`,
+`bg-blue-500/15`, `text-blue-600` — **does not exist at runtime**. It doesn't
+error. It silently does nothing, and you get a toggle with no width, or a badge
+with no colour. (Both happened to the official Proofreader.)
+
+The rule: **anything load-bearing goes in an inline `style`**.
+
+```tsx
+// ☠️  May silently be a no-op — nothing in Chronicle uses w-9.
+<span className="w-9 h-5 rounded-full bg-blue-500/15" />
+
+// ✅  Geometry and colour can't evaporate.
+<span style={{ width: 36, height: 20, borderRadius: 999, background: '#3b82f6' }} />
+```
+
+Classes are still fine for anything cosmetic you can afford to lose, and for the
+common vocabulary the app leans on everywhere (`flex`, `text-xs`, `opacity-40`,
+`rounded-xl`, `bg-black/5`, `border-black/12`, …). If you want to be sure a class
+survives, grep the built stylesheet:
+
+```bash
+grep -F 'bg-blue-500/15' dist/client/assets/index-*.css   # empty ⇒ it won't render
+```
+
+A plugin that needs styling it can *count* on should ship its own CSS in a
+`<style>` block instead — authored CSS is never scanned, generated or dropped.
+That's what the Chibi Assistant does, and why: it lived inside this repo for long
+enough that Tailwind's source detection was quietly generating its classes for
+it, and every one of them vanished the day it moved to its own repo.
+
+## Assets: a plugin can't serve files
+
+The server compiles your `src/` into **one JS module** and serves that. There is
+no static route for anything else — no images, no fonts, no JSON. An
+`<img src="/my-plugin/logo.png">` only resolves if the *host* happens to ship
+that file, which is a bet on someone else's deployment.
+
+Anything your plugin draws must travel inside the module: inline the SVG, or
+base64 the bytes into a data URI. Chibi generates a `sprites.ts` of data URIs
+from its PNGs (`scripts/build-sprites.sh`) for exactly this reason — 90 KB of
+sprite sheets, compiled into the bundle, working on any server.
+
+For anything genuinely custom (keyframes, sprite animations), ship a `<style>`
+block with your component — that CSS is yours and always ships with you.
 
 ---
 
@@ -368,8 +416,21 @@ Push the repo (the root must contain `chronicle-plugin.json`), then install it b
 URL like any other. Nothing else to do — no registry, no packaging, no release
 step. Cut a tag if you want users to be able to pin to it.
 
-## Bundled (seed) plugins
+## Seeding plugins into your own image
 
-The **Chibi Assistant** ships inside the image (`plugins-seed/`) and is copied
-into `/data/plugins` on first boot, so a fresh or air-gapped install has it with
-no network. It's an ordinary plugin — disable or uninstall it like any other.
+**The stock image ships no plugins.** A base deployment is the editor and nothing
+else; every plugin above, Chibi included, is installed from the UI.
+
+If you want an image that comes up with plugins already installed — a house
+build, or an air-gapped install with no route to a git host — drop the plugin's
+source into `plugins-seed/` and rebuild:
+
+    plugins-seed/
+      chibi/
+        chronicle-plugin.json
+        src/index.tsx
+
+On first boot each seed is copied into `/data/plugins` and compiled. Seeding
+never overwrites a plugin that's already installed, and a seeded plugin is an
+ordinary one afterwards — updatable from its git remote, disableable,
+uninstallable. See `plugins-seed/README.md`.
