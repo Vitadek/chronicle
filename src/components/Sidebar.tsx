@@ -690,8 +690,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             className={cn(
               "app-sidebar fixed inset-y-0 left-0 z-50 flex flex-col pt-20 sm:pt-24 pb-8 px-4 sm:px-6 border-r overflow-hidden w-[88vw] max-w-80",
               isDarkMode 
-                ? "bg-manuscript-dark border-white/5 text-white/40" 
-                : "bg-manuscript-light border-black/5 text-black/40",
+                ? "bg-manuscript-dark border-white/15 text-white/40" 
+                : "bg-manuscript-light border-black/12 text-black/40",
               className
             )}
           >
@@ -1130,7 +1130,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       onClick={handleExportDocx}
                       disabled={isExporting !== null}
                       className={cn(
-                      "w-full flex items-center justify-between px-6 py-4 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95 shadow-lg border border-black/5 dark:border-white/5",
+                      "w-full flex items-center justify-between px-6 py-4 rounded-2xl text-[10px] font-bold uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95 shadow-lg border border-black/12 dark:border-white/15",
                       isDarkMode ? "bg-white text-black" : "bg-black text-white"
                     )}>
                       <div className="flex items-center gap-3">
@@ -1236,7 +1236,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           onChange={(e) => onUpdateUserProfile({ name: e.target.value })}
                           placeholder="Your real name"
                           className={cn(
-                            "w-full px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all",
+                            "w-full px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/12 dark:border-white/15 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all",
                             isDarkMode ? "text-white" : "text-black"
                           )}
                         />
@@ -1249,7 +1249,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           onChange={(e) => onUpdateUserProfile({ address: e.target.value })}
                           placeholder="Your permanent mailing address"
                           className={cn(
-                            "w-full h-24 px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all resize-none",
+                            "w-full h-24 px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/12 dark:border-white/15 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all resize-none",
                             isDarkMode ? "text-white" : "text-black"
                           )}
                         />
@@ -1263,7 +1263,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           onChange={(e) => onUpdateUserProfile({ phone: e.target.value })}
                           placeholder="Phone number"
                           className={cn(
-                            "w-full px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all",
+                            "w-full px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/12 dark:border-white/15 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all",
                             isDarkMode ? "text-white" : "text-black"
                           )}
                         />
@@ -1277,7 +1277,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           onChange={(e) => onUpdateUserProfile({ email: e.target.value })}
                           placeholder="Email address"
                           className={cn(
-                            "w-full px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all",
+                            "w-full px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/12 dark:border-white/15 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all",
                             isDarkMode ? "text-white" : "text-black"
                           )}
                         />
@@ -1290,7 +1290,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           onChange={(e) => onUpdateUserProfile({ agentInfo: e.target.value })}
                           placeholder="Literary Agent details"
                           className={cn(
-                            "w-full h-24 px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all resize-none",
+                            "w-full h-24 px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/12 dark:border-white/15 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all resize-none",
                             isDarkMode ? "text-white" : "text-black"
                           )}
                         />
@@ -1298,7 +1298,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                   </div>
 
-                  <div className="py-8 mt-auto border-t border-black/5 dark:border-white/5">
+                  <div className="py-8 mt-auto border-t border-black/12 dark:border-white/15">
                     <p className="text-[10px] opacity-20 text-center uppercase tracking-widest font-bold">
                       Author Profile Locked to Device
                     </p>
@@ -1615,7 +1615,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               {metadata.customSceneBreakSvg ? 'Change SVG' : 'Upload SVG'}
                             </button>
                             {metadata.customSceneBreakSvg && (
-                              <div className="flex items-center justify-center p-4 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/5">
+                              <div className="flex items-center justify-center p-4 rounded-xl bg-black/5 dark:bg-white/5 border border-black/12 dark:border-white/15">
                                 <img 
                                   src={metadata.customSceneBreakSvg} 
                                   alt="Custom Dinkus" 
@@ -1677,7 +1677,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     )}
                   </div>
 
-                  <div className="py-8 mt-auto border-t border-black/5 dark:border-white/5">
+                  <div className="py-8 mt-auto border-t border-black/12 dark:border-white/15">
                     <p className="text-[10px] opacity-20 text-center uppercase tracking-widest font-bold">
                       Chronicle v0.1.0
                     </p>

@@ -57,7 +57,7 @@ export function GlobalSettings({
     onUpdateExportSettings({ ...exportSettings, epub: { ...exportSettings.epub, ...patch } });
 
   const inputClass = cn(
-    'w-full px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
+    'w-full px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/12 dark:border-white/15 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
     isDarkMode ? 'text-white' : 'text-black',
   );
 
@@ -114,7 +114,7 @@ export function GlobalSettings({
             </p>
 
             {/* HTML */}
-            <div className="rounded-2xl border border-black/5 dark:border-white/5 p-5 space-y-5">
+            <div className="rounded-2xl border border-black/12 dark:border-white/15 p-5 space-y-5">
               <h4 className={cn('text-xs font-bold', isDarkMode ? 'text-white' : 'text-black')}>HTML</h4>
               <div>
                 <label className="block text-[10px] uppercase tracking-widest font-bold opacity-30 mb-2">Theme</label>
@@ -139,7 +139,7 @@ export function GlobalSettings({
             </div>
 
             {/* Markdown / Hugo */}
-            <div className="rounded-2xl border border-black/5 dark:border-white/5 p-5 space-y-5">
+            <div className="rounded-2xl border border-black/12 dark:border-white/15 p-5 space-y-5">
               <h4 className={cn('text-xs font-bold', isDarkMode ? 'text-white' : 'text-black')}>Markdown (Hugo)</h4>
               <MarkdownFrontMatterFields
                 value={exportSettings.markdown}
@@ -147,7 +147,7 @@ export function GlobalSettings({
                 isDarkMode={isDarkMode}
               />
 
-              <div className="pt-2 border-t border-black/5 dark:border-white/5">
+              <div className="pt-2 border-t border-black/12 dark:border-white/15">
                 <ToggleRow
                   isDarkMode={isDarkMode}
                   label="Edit front matter on every export"
@@ -159,7 +159,7 @@ export function GlobalSettings({
             </div>
 
             {/* EPUB */}
-            <div className="rounded-2xl border border-black/5 dark:border-white/5 p-5 space-y-5">
+            <div className="rounded-2xl border border-black/12 dark:border-white/15 p-5 space-y-5">
               <h4 className={cn('text-xs font-bold', isDarkMode ? 'text-white' : 'text-black')}>EPUB</h4>
               <div>
                 <label className="block text-[10px] uppercase tracking-widest font-bold opacity-30 mb-2">Cover source</label>
@@ -275,7 +275,7 @@ export function GlobalSettings({
           )}
 
           {/* Security/Sync Note */}
-          <section className="pt-8 border-t border-black/5 dark:border-white/5">
+          <section className="pt-8 border-t border-black/12 dark:border-white/15">
             <div className="flex items-start gap-3 p-4 rounded-2xl bg-black/5 dark:bg-white/5">
               <Shield className="w-4 h-4 opacity-20 shrink-0 mt-0.5" />
               <p className="text-[10px] leading-relaxed opacity-40 italic">
@@ -285,7 +285,7 @@ export function GlobalSettings({
           </section>
         </div>
 
-        <div className="py-10 mt-6 border-t border-black/5 dark:border-white/5 text-center">
+        <div className="py-10 mt-6 border-t border-black/12 dark:border-white/15 text-center">
           <p className="text-[10px] opacity-20 uppercase tracking-widest font-bold">Chronicle Global Config</p>
         </div>
       </div>

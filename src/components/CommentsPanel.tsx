@@ -154,7 +154,7 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({
               key={`${entry.chapterId}-${entry.from}`}
               className={cn(
                 'rounded-xl p-3 border space-y-2 group',
-                isDarkMode ? 'bg-white/[0.02] border-white/5' : 'bg-black/[0.02] border-black/5',
+                isDarkMode ? 'bg-white/[0.02] border-white/15' : 'bg-black/[0.02] border-black/12',
               )}
             >
               <button
@@ -230,7 +230,7 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({
               onClick={() => onSelectChapter(c.id)}
               className={cn(
                 'w-full flex items-center justify-between p-3 rounded-lg transition-all border opacity-70 hover:opacity-100',
-                isDarkMode ? 'border-white/5 hover:bg-white/5' : 'border-black/5 hover:bg-black/5',
+                isDarkMode ? 'border-white/15 hover:bg-white/5' : 'border-black/12 hover:bg-black/5',
               )}
             >
               <span className="text-xs">{c.title}</span>

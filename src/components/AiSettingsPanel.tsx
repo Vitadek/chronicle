@@ -186,7 +186,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
               value={cfg.textModel}
               onChange={(e) => setField('textModel', e.target.value)}
               className={cn(
-                'w-full px-4 py-2.5 rounded-xl text-xs font-mono bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all appearance-none',
+                'w-full px-4 py-2.5 rounded-xl text-xs font-mono bg-black/[0.03] dark:bg-white/[0.08] border border-black/12 dark:border-white/15 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all appearance-none',
                 isDarkMode ? 'text-white' : 'text-black',
               )}
             >
@@ -206,7 +206,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                   value={cfg.contextLimit || 10000}
                   onChange={(e) => setField('contextLimit', parseInt(e.target.value, 10))}
                   className={cn(
-                    'w-full px-3 py-2 rounded-lg text-xs font-mono bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
+                    'w-full px-3 py-2 rounded-lg text-xs font-mono bg-black/[0.03] dark:bg-white/[0.08] border border-black/12 dark:border-white/15 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
                     isDarkMode ? 'text-white' : 'text-black',
                   )}
                 />
@@ -221,7 +221,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                   value={cfg.maxOutputTokens || 2048}
                   onChange={(e) => setField('maxOutputTokens', parseInt(e.target.value, 10))}
                   className={cn(
-                    'w-full px-3 py-2 rounded-lg text-xs font-mono bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
+                    'w-full px-3 py-2 rounded-lg text-xs font-mono bg-black/[0.03] dark:bg-white/[0.08] border border-black/12 dark:border-white/15 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
                     isDarkMode ? 'text-white' : 'text-black',
                   )}
                 />
@@ -241,7 +241,7 @@ export const AiSettingsPanel: React.FC<AiSettingsPanelProps> = ({
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddModel(); } }}
                 placeholder={placeholderFor(cfg.provider)}
                 className={cn(
-                  'flex-1 px-3 py-2 rounded-lg text-xs font-mono bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
+                  'flex-1 px-3 py-2 rounded-lg text-xs font-mono bg-black/[0.03] dark:bg-white/[0.08] border border-black/12 dark:border-white/15 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
                   isDarkMode ? 'text-white' : 'text-black',
                 )}
                 autoComplete="off"

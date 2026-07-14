@@ -916,15 +916,15 @@ export const EditorView: React.FC<EditorViewProps> = ({
                         }
                       }}
                       placeholder="Capture your thoughts..."
-                      className="w-full bg-white/[0.03] border border-white/5 rounded-xl p-4 text-sm text-[#F1EDE4] placeholder:opacity-20 focus:outline-none focus:border-white/20 min-h-[160px] mb-6 transition-all duration-300 font-serif resize-none leading-relaxed"
+                      className="w-full bg-white/[0.03] border border-white/15 rounded-xl p-4 text-sm text-[#F1EDE4] placeholder:opacity-20 focus:outline-none focus:border-white/20 min-h-[160px] mb-6 transition-all duration-300 font-serif resize-none leading-relaxed"
                     />
 
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <div className="flex items-center gap-1.5 opacity-20">
-                          <kbd className="px-1 py-0.5 rounded bg-white/10 text-[8px] font-mono border border-white/5">CTRL</kbd>
+                          <kbd className="px-1 py-0.5 rounded bg-white/10 text-[8px] font-mono border border-white/15">CTRL</kbd>
                           <span className="text-[8px] font-bold">+</span>
-                          <kbd className="px-1 py-0.5 rounded bg-white/10 text-[8px] font-mono border border-white/5">ENTER</kbd>
+                          <kbd className="px-1 py-0.5 rounded bg-white/10 text-[8px] font-mono border border-white/15">ENTER</kbd>
                         </div>
                         <span className="text-[8px] opacity-20 uppercase tracking-widest font-bold">To confirm</span>
                       </div>
@@ -991,7 +991,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
               animate={{ scale: 1, y: 0 }}
               className="bg-[#1A1918] border border-white/10 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl"
             >
-              <div className="px-8 py-6 border-b border-white/5 flex items-center justify-between">
+              <div className="px-8 py-6 border-b border-white/15 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-lg bg-white/5">
                     <Sparkles className="w-4 h-4 text-[#F1EDE4]" />

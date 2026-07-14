@@ -173,7 +173,7 @@ export const PluginsPanel: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) 
       </div>
 
       {/* Install from git */}
-      <div className="rounded-2xl border border-black/5 dark:border-white/5 p-5 space-y-3">
+      <div className="rounded-2xl border border-black/12 dark:border-white/15 p-5 space-y-3">
         <p className="text-[10px] uppercase tracking-widest font-bold opacity-30">Install from git</p>
         <div className="flex items-center gap-2">
           <input
@@ -183,7 +183,7 @@ export const PluginsPanel: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) 
             onKeyDown={(e) => { if (e.key === 'Enter') void install(); }}
             placeholder="https://github.com/user/chronicle-plugin.git"
             className={cn(
-              'flex-1 px-3 py-2.5 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
+              'flex-1 px-3 py-2.5 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/12 dark:border-white/15 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
               isDarkMode ? 'text-white' : 'text-black',
             )}
           />
@@ -382,7 +382,7 @@ export const PluginsPanel: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) 
                     const Panel = loaded.find((l) => l.plugin.id === p.id)?.plugin.contributes?.settingsPanel;
                     if (!Panel) return null;
                     return (
-                      <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/5">
+                      <div className="mt-3 pt-3 border-t border-black/12 dark:border-white/15">
                         <PluginBoundary pluginId={p.id} onError={reportError}>
                           <Panel {...makeContext(p.id)} />
                         </PluginBoundary>

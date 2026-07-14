@@ -205,7 +205,7 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
                     "group relative p-6 sm:p-8 rounded-2xl sm:rounded-3xl border cursor-pointer transition-all hover:shadow-2xl overflow-hidden",
                     isConfirming
                       ? "border-red-500/30 bg-red-500/5"
-                      : "border-black/5 dark:border-white/5",
+                      : "border-black/12 dark:border-white/15",
                     !isConfirming && (isDarkMode ? "hover:bg-white/5" : "hover:bg-black/5"),
                   )}
                 >
@@ -281,7 +281,7 @@ export function LibraryView({ onSelectManuscript, onCreateNew, onImportManuscrip
                       <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-widest truncate">{m.author || 'Anonymous'}</span>
                     </div>
 
-                    <div className="mt-auto pt-5 sm:pt-6 border-t border-black/5 dark:border-white/5 flex items-center justify-between">
+                    <div className="mt-auto pt-5 sm:pt-6 border-t border-black/12 dark:border-white/15 flex items-center justify-between">
                       <div className="flex items-center gap-2 opacity-30 text-[8px] sm:text-[9px] uppercase font-bold tracking-widest">
                         <Clock className="w-3 h-3" />
                         <span>{new Date(m.lastModified).toLocaleDateString()}</span>

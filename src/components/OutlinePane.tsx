@@ -102,7 +102,7 @@ export const OutlinePane: React.FC<OutlinePaneProps> = (props) => {
               onChange={(e) => props.onUpdateSynopsis(e.target.value)}
               placeholder="Start drafting your high-level project outline here..."
               className={cn(
-                "flex-1 w-full bg-black/[0.03] dark:bg-white/[0.08] rounded-xl p-4 text-xs leading-relaxed outline-none border border-black/5 dark:border-white/5 focus:border-current/20 transition-all resize-none",
+                "flex-1 w-full bg-black/[0.03] dark:bg-white/[0.08] rounded-xl p-4 text-xs leading-relaxed outline-none border border-black/12 dark:border-white/15 focus:border-current/20 transition-all resize-none",
                 isDarkMode ? "text-white" : "text-black"
               )}
             />
@@ -184,7 +184,7 @@ export const OutlinePane: React.FC<OutlinePaneProps> = (props) => {
         <div
           className={cn(
             'flex items-center gap-0.5 p-0.5 rounded-xl border overflow-x-auto flex-1',
-            isDarkMode ? 'bg-black/10 border-white/5' : 'bg-black/[0.03] border-black/5',
+            isDarkMode ? 'bg-black/10 border-white/15' : 'bg-black/[0.03] border-black/12',
           )}
         >
           {tabs.map((t) => (
@@ -337,7 +337,7 @@ const AiView: React.FC<OutlinePaneProps> = ({
         </div>
         <div className={cn(
           'px-3 py-3 rounded-xl border text-xs leading-relaxed',
-          isDarkMode ? 'bg-white/[0.02] border-white/5' : 'bg-black/[0.02] border-black/5',
+          isDarkMode ? 'bg-white/[0.02] border-white/15' : 'bg-black/[0.02] border-black/12',
         )}>
           <MarkdownRenderer
             text={aiOutlineMarkdown}
@@ -374,7 +374,7 @@ const CharactersList: React.FC<CharactersListProps> = ({ characters, isDarkMode,
         onClick={() => onOpen(c.id)}
         className={cn(
           'w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all hover:shadow-md',
-          isDarkMode ? 'border-white/5 hover:bg-white/5' : 'border-black/5 hover:bg-black/[0.02]',
+          isDarkMode ? 'border-white/15 hover:bg-white/5' : 'border-black/12 hover:bg-black/[0.02]',
         )}
       >
         <div

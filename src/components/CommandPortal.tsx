@@ -76,7 +76,7 @@ export const CommandPortal = forwardRef((props: any, ref) => {
         exit={{ opacity: 0, scale: 0.95, y: -10 }}
         className="z-[100] bg-[#1A1918] text-[#F1EDE4] border border-[#F1EDE4]/10 rounded-lg shadow-2xl overflow-hidden min-w-[240px] font-sans"
       >
-        <div className="flex items-center justify-between px-3 py-2 border-b border-white/5 bg-white/[0.02]">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-white/15 bg-white/[0.02]">
           <div className="flex items-center gap-2">
             <Terminal className="w-3.5 h-3.5 opacity-50" />
             <span className="text-[9px] uppercase tracking-[0.2em] font-bold opacity-30">Manuscript CLI</span>
@@ -85,7 +85,7 @@ export const CommandPortal = forwardRef((props: any, ref) => {
         </div>
         
         <div className="p-3">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/40 border border-white/5 mb-3 group focus-within:border-white/20 transition-colors">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/40 border border-white/15 mb-3 group focus-within:border-white/20 transition-colors">
             <span className="text-[#F1EDE4]/20 text-xs font-mono font-bold tracking-tighter shrink-0 select-none">#!</span>
             <input
               ref={inputRef}

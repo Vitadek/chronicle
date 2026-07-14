@@ -43,7 +43,7 @@ export const CharacterSheet: React.FC<CharacterSheetProps> = ({
 
   const labelClass = 'block text-[10px] uppercase tracking-widest font-bold opacity-30 mb-2';
   const inputClass = cn(
-    'w-full px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
+    'w-full px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/12 dark:border-white/15 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
     isDarkMode ? 'text-white' : 'text-black',
   );
   const textareaClass = cn(inputClass, 'resize-none min-h-[60px]');

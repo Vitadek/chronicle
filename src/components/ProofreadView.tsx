@@ -105,7 +105,7 @@ export function ProofreadView({
       )}
     >
       {/* Header */}
-      <div className="shrink-0 flex items-center justify-between gap-3 px-4 sm:px-8 py-4 border-b border-black/5 dark:border-white/5">
+      <div className="shrink-0 flex items-center justify-between gap-3 px-4 sm:px-8 py-4 border-b border-black/12 dark:border-white/15">
         <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={onExit}
@@ -260,7 +260,7 @@ function ChapterPicker({ chapters, draft, onChangeDraft, isDarkMode, onStart }: 
           </p>
         </div>
 
-        <div className="flex items-center justify-between px-6 py-2 border-y border-black/5 dark:border-white/5">
+        <div className="flex items-center justify-between px-6 py-2 border-y border-black/12 dark:border-white/15">
           <span className="text-[10px] uppercase tracking-widest font-bold opacity-40">
             {draft.size} of {chapters.length} selected
           </span>
@@ -303,7 +303,7 @@ function ChapterPicker({ chapters, draft, onChangeDraft, isDarkMode, onStart }: 
           })}
         </div>
 
-        <div className="px-6 py-4 border-t border-black/5 dark:border-white/5">
+        <div className="px-6 py-4 border-t border-black/12 dark:border-white/15">
           <button
             onClick={onStart}
             disabled={draft.size === 0}
@@ -822,7 +822,7 @@ function ProofreadChapter({
 
       {/* Optional issue list panel */}
       {showList && (
-        <div className="w-72 shrink-0 border-l border-black/5 dark:border-white/5 overflow-y-auto custom-scrollbar p-3 space-y-4">
+        <div className="w-72 shrink-0 border-l border-black/12 dark:border-white/15 overflow-y-auto custom-scrollbar p-3 space-y-4">
           {(['spelling', 'grammar', 'clarity'] as IssueSource[]).map((source) => {
             const rows = queue.filter((r) => r.source === source);
             if (rows.length === 0 && !(source === 'clarity' && clarityRan)) return null;
@@ -933,7 +933,7 @@ function DictionaryDrawer({ isOpen, onClose, isDarkMode, onChanged }: Dictionary
                 onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
                 placeholder="Add a word…"
                 className={cn(
-                  'flex-1 px-3 py-2.5 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
+                  'flex-1 px-3 py-2.5 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/12 dark:border-white/15 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
                   isDarkMode ? 'text-white' : 'text-black',
                 )}
               />

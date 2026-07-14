@@ -17,7 +17,7 @@ interface MarkdownFrontMatterFieldsProps {
  */
 export function MarkdownFrontMatterFields({ value, onChange, isDarkMode }: MarkdownFrontMatterFieldsProps) {
   const inputClass = cn(
-    'w-full px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/5 dark:border-white/5 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
+    'w-full px-4 py-3 rounded-xl text-xs bg-black/[0.03] dark:bg-white/[0.08] border border-black/12 dark:border-white/15 focus:border-black/10 dark:focus:border-white/20 outline-none transition-all',
     isDarkMode ? 'text-white' : 'text-black',
   );
 
@@ -32,7 +32,7 @@ export function MarkdownFrontMatterFields({ value, onChange, isDarkMode }: Markd
       />
 
       {value.frontMatter && (
-        <div className="space-y-5 pl-1 border-l-2 border-black/5 dark:border-white/5 ml-1">
+        <div className="space-y-5 pl-1 border-l-2 border-black/12 dark:border-white/15 ml-1">
           <div className="pl-4 space-y-4">
             <FmToggle
               isDarkMode={isDarkMode}

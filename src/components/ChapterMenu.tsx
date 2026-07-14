@@ -114,7 +114,7 @@ export const ChapterMenu: React.FC<ChapterMenuProps> = ({
 
               <div className={cn(
                 'my-1 border-t',
-                isDarkMode ? 'border-white/5' : 'border-black/5',
+                isDarkMode ? 'border-white/15' : 'border-black/12',
               )} />
 
               <MenuItem icon={Copy} label="Duplicate" onClick={handle(onDuplicate)} isDarkMode={isDarkMode} />
