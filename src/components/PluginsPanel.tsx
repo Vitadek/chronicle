@@ -325,7 +325,10 @@ export const PluginsPanel: React.FC<{ isDarkMode: boolean }> = ({ isDarkMode }) 
                   {/* Unmet SOFT requirements: it runs, just not at full strength. */}
                   {p.status.unmetWants.length > 0 && blocked.length === 0 && (
                     <div className="text-[10px] opacity-40 mt-2 leading-relaxed space-y-0.5">
-                      <p>Limited — no {p.status.unmetWants.map(capabilityName).join(' or ')}.</p>
+                      {/* "missing", not "no": the capability names read as noun
+                          phrases ("a Gemini API key"), and "no a Gemini API key"
+                          is what that sentence used to say. */}
+                      <p>Limited — missing {p.status.unmetWants.map(capabilityName).join(' and ')}.</p>
                       {(p.unmetWantsReasons ?? []).map((reason) => (
                         <p key={reason}>{reason}</p>
                       ))}
