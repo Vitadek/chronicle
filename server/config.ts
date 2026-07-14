@@ -50,6 +50,12 @@ export const config = {
   dataDir: process.env.DATA_DIR || path.join(process.cwd(), 'data'),
   isProd: process.env.NODE_ENV === 'production',
 
+  // Single-user "local admin" surface: whole-database backup/restore over HTTP
+  // (the .chron export/import). Unreasonable on a shared multi-user server — one
+  // user could dump or overwrite everyone's data — so it is OFF by default and
+  // only turned on by the single-user desktop build. See server/routes/backup.ts.
+  localAdmin: envBoolean('LOCAL_ADMIN'),
+
   sessionTtlMs: 1000 * 60 * 60 * 24 * 30,
 
   auth: {

@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { config } from './config';
+import { applyPendingImport } from './lib/localBackup';
 
 // Prefer chronicle.db (current name) but keep an existing scribe.db (legacy
 // name from before the rename) working for upgrade compatibility. If a user
@@ -10,10 +11,20 @@ const PRIMARY_DB = 'chronicle.db';
 const LEGACY_DB = 'scribe.db';
 const primaryPath = path.join(config.dataDir, PRIMARY_DB);
 const legacyPath = path.join(config.dataDir, LEGACY_DB);
+fs.mkdirSync(config.dataDir, { recursive: true });
+
+// A staged `.chron` import is applied HERE, before any connection opens — it
+// renames the staged database over chronicle.db (see server/lib/localBackup.ts).
+// Doing it pre-open is what makes restore safe: no live handle, no WAL to
+// reconcile. After this the primary path is authoritative, so resolve dbPath
+// after the swap.
+if (applyPendingImport(config.dataDir)) {
+  console.log('[db] applied a staged .chron import');
+}
+
 const dbPath = fs.existsSync(primaryPath) || !fs.existsSync(legacyPath)
   ? primaryPath
   : legacyPath;
-fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
 export const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');

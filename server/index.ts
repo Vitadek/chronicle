@@ -22,6 +22,7 @@ import { seedPlugins } from './lib/pluginSeed';
 import { attachCollab } from './collab';
 import grammarRouter from './routes/grammar';
 import settingsRouter from './routes/settings';
+import { mountBackup } from './routes/backup';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -143,6 +144,10 @@ async function start() {
   app.use('/api/plugins', pluginsRouter);
   app.use('/api/grammar', grammarRouter);
   app.use('/api/settings', settingsRouter);
+
+  // Single-user local-admin surface (.chron backup/restore). No-op unless
+  // LOCAL_ADMIN is set, so a shared server never exposes whole-DB export/import.
+  mountBackup(app, config);
 
   // Unknown API paths are JSON 404s, never a misleading SPA index response.
   app.use('/api', (_req, res) => {
