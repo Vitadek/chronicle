@@ -852,18 +852,25 @@ function AppInner() {
   };
 
   const handleUpdateChapterContent = useCallback((title: string, content: string) => {
+    // Store exactly what the writer typed — including an empty title. The
+    // placeholder ("Untitled Chapter", "Untitled Manuscript", "Anonymous") is a
+    // DISPLAY concern and every render/export site already falls back on its
+    // own (Sidebar, LibraryView, epub/docx export). Coercing here instead fed
+    // the placeholder back into the editor via the title/content sync effects,
+    // so clearing a title re-typed "Untitled Chapter" into the field and the
+    // writer could never empty it. Keep the interactive value raw.
     if (currentChapterId === 'title-page') {
       setMetadata(prev => prev ? ({
         ...prev,
-        title: title || 'Untitled Manuscript',
-        author: content || 'Uncredited Author',
+        title,
+        author: content,
         lastModified: Date.now()
       }) : null);
       return;
     }
-    setChapters(prev => prev.map(c => 
-      c.id === currentChapterId 
-        ? { ...c, content, title: title || 'Untitled Chapter', lastModified: Date.now() } 
+    setChapters(prev => prev.map(c =>
+      c.id === currentChapterId
+        ? { ...c, content, title, lastModified: Date.now() }
         : c
     ));
     setMetadata(prev => prev ? ({ ...prev, lastModified: Date.now() }) : null);
@@ -876,7 +883,11 @@ function AppInner() {
   const handleAddChapter = useCallback(() => {
     const newChapter: Chapter = {
       id: Math.random().toString(36).substr(2, 9),
-      title: 'Untitled Chapter',
+      // Empty, not the literal "Untitled Chapter": the title field then shows
+      // its placeholder and the sidebar renders the faded fallback, so the
+      // writer types straight into an empty field instead of first deleting a
+      // placeholder that was masquerading as real text.
+      title: '',
       content: '<p>Start writing...</p>',
       lastModified: Date.now(),
     };
